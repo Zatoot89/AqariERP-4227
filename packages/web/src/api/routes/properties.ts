@@ -14,6 +14,29 @@ async function findProperty(agencyId: string, propertyId: string) {
     .get();
 }
 
+function propertyImagePrefix(agencyId: string): string {
+  return `agencies/${agencyId}/properties/`;
+}
+
+function normalizeImageKeys(value: unknown, agencyId: string): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+
+  let keys: unknown;
+  try {
+    keys = typeof value === "string" ? JSON.parse(value) : value;
+  } catch {
+    throw new Error("Invalid image list");
+  }
+  if (!Array.isArray(keys)) throw new Error("Invalid image list");
+
+  const prefix = propertyImagePrefix(agencyId);
+  if (!keys.every((key) => typeof key === "string" && key.startsWith(prefix))) {
+    throw new Error("One or more image keys are not owned by this agency");
+  }
+  return JSON.stringify(keys);
+}
+
 export const properties = new Hono()
   .get("/", requireTenant, async (c) => {
     const agencyId = c.get("agencyId") as string;
@@ -37,12 +60,13 @@ export const properties = new Hono()
     }
 
     const total = rows.length;
+    const imagePrefix = propertyImagePrefix(agencyId);
     if (all === "true") {
       const capped = rows.slice(0, 500);
       const withImages = await Promise.all(
         capped.map(async (property) => ({
           ...property,
-          imageUrls: await presignImages(property.images),
+          imageUrls: await presignImages(property.images, imagePrefix),
         })),
       );
       return c.json({ properties: withImages, total, page: 1, pageSize: total }, 200);
@@ -54,7 +78,7 @@ export const properties = new Hono()
     const withImages = await Promise.all(
       paged.map(async (property) => ({
         ...property,
-        imageUrls: await presignImages(property.images),
+        imageUrls: await presignImages(property.images, imagePrefix),
       })),
     );
     return c.json({ properties: withImages, total, page: currentPage, pageSize: size }, 200);
@@ -63,12 +87,17 @@ export const properties = new Hono()
     const user = c.get("user")!;
     const agencyId = c.get("agencyId") as string;
     const body = await c.req.json();
-    const id = nanoid();
+    let images: string | null | undefined;
+    try {
+      images = normalizeImageKeys(body.images, agencyId);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "Invalid images" }, 400);
+    }
 
     const [property] = await db
       .insert(schema.properties)
       .values({
-        id,
+        id: nanoid(),
         agencyId,
         listedBy: user.id,
         title: body.title,
@@ -86,7 +115,7 @@ export const properties = new Hono()
         country: body.country,
         description: body.description,
         descriptionAr: body.descriptionAr,
-        images: body.images,
+        images,
         externalId: body.externalId,
       })
       .returning();
@@ -97,7 +126,7 @@ export const properties = new Hono()
     const property = await findProperty(agencyId, c.req.param("id"));
     if (!property) return c.json({ error: "Not found" }, 404);
 
-    const imageUrls = await presignImages(property.images);
+    const imageUrls = await presignImages(property.images, propertyImagePrefix(agencyId));
     return c.json({ property: { ...property, imageUrls } }, 200);
   })
   .patch("/:id", requireTenant, async (c) => {
@@ -107,6 +136,13 @@ export const properties = new Hono()
     if (!existing) return c.json({ error: "Not found" }, 404);
 
     const body = await c.req.json();
+    let images: string | null | undefined;
+    try {
+      images = normalizeImageKeys(body.images, agencyId);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "Invalid images" }, 400);
+    }
+
     const [property] = await db
       .update(schema.properties)
       .set({
@@ -125,7 +161,7 @@ export const properties = new Hono()
         country: body.country,
         description: body.description,
         descriptionAr: body.descriptionAr,
-        images: body.images,
+        images,
         externalId: body.externalId,
         updatedAt: Date.now(),
       })
