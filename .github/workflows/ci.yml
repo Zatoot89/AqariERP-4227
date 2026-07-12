@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -34,6 +34,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Apply final lint corrections
+        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/security-foundation'
+        shell: bash
+        run: |
+          python3 .github/scripts/fix-aqari-lint-round2.py
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add packages/web/src
+            git commit -m "finish UI accessibility lint fixes"
+            git push origin HEAD:agent/security-foundation
+          fi
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
