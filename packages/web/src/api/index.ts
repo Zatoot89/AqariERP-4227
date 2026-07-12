@@ -1,10 +1,19 @@
+import "./context";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { and, eq } from "drizzle-orm";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { auth } from "./auth";
-import { authMiddleware, requireAuth } from "./middleware/auth";
+import { db } from "./database";
+import * as schema from "./database/schema";
+import { authMiddleware, requireTenant } from "./middleware/auth";
 import { s3 } from "./lib/s3";
+import {
+  buildAllowedOrigins,
+  resolveAllowedOrigin,
+  sanitizeUploadFilename,
+} from "./lib/security";
 import { leads } from "./routes/leads";
 import { properties } from "./routes/properties";
 import { tasks } from "./routes/tasks";
@@ -15,21 +24,91 @@ import { webhooks } from "./routes/webhooks";
 import { whatsapp } from "./routes/whatsapp";
 import { seed } from "./routes/seed";
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+const allowedOrigins = buildAllowedOrigins({
+  configured: process.env.ALLOWED_ORIGINS,
+  websiteUrl: process.env.WEBSITE_URL,
+  nodeEnv: process.env.NODE_ENV,
+});
+
 const app = new Hono()
-  .use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }))
+  .use(
+    cors({
+      origin: (origin) => resolveAllowedOrigin(origin, allowedOrigins),
+      credentials: true,
+      exposeHeaders: ["set-auth-token"],
+      allowHeaders: ["Authorization", "Content-Type"],
+      allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    }),
+  )
+  .use("*", async (c, next) => {
+    await next();
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("X-Frame-Options", "DENY");
+    c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  })
   .on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw))
   .basePath("api")
   .use("*", authMiddleware)
   .get("/health", (c) => c.json({ status: "ok" }, 200))
-  .post("/upload/presign", requireAuth, async (c) => {
-    const { filename, contentType } = await c.req.json();
-    const key = `properties/${Date.now()}-${filename}`.replace(/[^a-zA-Z0-9/_.-]/g, "_");
-    const url = await getSignedUrl(s3, new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET,
-      Key: key,
-      ContentType: contentType,
-    }), { expiresIn: 600 });
-    return c.json({ url, key }, 200);
+  .post("/upload/presign", requireTenant, async (c) => {
+    const user = c.get("user")!;
+    const agencyId = c.get("agencyId") as string;
+    const { filename, contentType, sizeBytes, propertyId, purpose } = await c.req.json();
+
+    if (typeof filename !== "string" || !filename.trim()) {
+      return c.json({ error: "filename is required" }, 400);
+    }
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      return c.json({ error: "Unsupported image type" }, 400);
+    }
+    if (
+      sizeBytes !== undefined &&
+      (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_IMAGE_BYTES)
+    ) {
+      return c.json({ error: "Image exceeds the 10 MB limit" }, 400);
+    }
+    if (!process.env.S3_BUCKET) return c.json({ error: "Storage is not configured" }, 503);
+
+    const safeFilename = sanitizeUploadFilename(filename);
+    let keyPrefix: string;
+
+    if (purpose === "agency-logo") {
+      keyPrefix = `agencies/${agencyId}/branding`;
+    } else if (propertyId !== undefined && propertyId !== null && propertyId !== "") {
+      if (typeof propertyId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(propertyId)) {
+        return c.json({ error: "Invalid property ID" }, 400);
+      }
+      const property = await db
+        .select({ id: schema.properties.id })
+        .from(schema.properties)
+        .where(
+          and(
+            eq(schema.properties.id, propertyId),
+            eq(schema.properties.agencyId, agencyId),
+          ),
+        )
+        .get();
+      if (!property) return c.json({ error: "Property not found" }, 404);
+      keyPrefix = `agencies/${agencyId}/properties/${propertyId}`;
+    } else {
+      keyPrefix = `agencies/${agencyId}/properties/drafts/${user.id}`;
+    }
+
+    const key = `${keyPrefix}/${Date.now()}-${safeFilename}`;
+    const url = await getSignedUrl(
+      s3,
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: key,
+        ContentType: contentType,
+        ...(sizeBytes ? { ContentLength: sizeBytes } : {}),
+      }),
+      { expiresIn: 600 },
+    );
+    return c.json({ url, key, maxSizeBytes: MAX_IMAGE_BYTES }, 200);
   })
   .route("/leads", leads)
   .route("/properties", properties)
@@ -38,8 +117,18 @@ const app = new Hono()
   .route("/analytics", analytics)
   .route("/settings", settings)
   .route("/webhooks", webhooks)
-  .route("/whatsapp", whatsapp)
-  .route("/seed", seed);
+  .route("/whatsapp", whatsapp);
+
+if (process.env.NODE_ENV !== "production" && process.env.ENABLE_DEMO_SEED === "true") {
+  app.use("/seed/*", async (c, next) => {
+    const seedSecret = process.env.DEMO_SEED_SECRET;
+    if (!seedSecret || c.req.header("x-demo-seed-secret") !== seedSecret) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    return next();
+  });
+  app.route("/seed", seed);
+}
 
 export type AppType = typeof app;
 export default app;

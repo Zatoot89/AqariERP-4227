@@ -1,8 +1,5 @@
 import { Resend } from "resend";
 
-// Lazily constructed — the Resend SDK throws at construction time if there's no
-// API key, and we want the whole server (not just email) to still boot and work
-// fine before a key is configured in Settings/env.
 let resend: Resend | null = null;
 function getClient(): Resend | null {
   if (!process.env.RESEND_API_KEY) return null;
@@ -19,19 +16,24 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail({ to, subject, text, html, replyTo }: SendEmailOptions) {
-  if (!process.env.RESEND_API_KEY) {
+  const client = getClient();
+  if (!client) {
     console.warn(`[email] RESEND_API_KEY not set — skipping email "${subject}" to ${to}`);
     return null;
   }
-  const { data, error } = await resend.emails.send({
-    from: "Aqari CRM <onboarding@resend.dev>",
-    to: Array.isArray(to) ? to : [to],
-    subject,
-    text,
-    html,
-    replyTo,
-  });
 
+  const recipients = Array.isArray(to) ? to : [to];
+  const base = {
+    from: "Aqari CRM <onboarding@resend.dev>",
+    to: recipients,
+    subject,
+    ...(replyTo ? { replyTo } : {}),
+  };
+  const message = html
+    ? { ...base, html, ...(text ? { text } : {}) }
+    : { ...base, text: text ?? "" };
+
+  const { data, error } = await client.emails.send(message);
   if (error) {
     console.error(`[email] Failed to send "${subject}" to ${to}:`, error);
     return null;
@@ -46,7 +48,7 @@ export function agentInviteEmail({ name, email, password, role, agencyName, appU
     subject: `You've been invited to ${agencyName} on Aqari CRM`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-        <h2 style="color: #111;">Welcome to ${agencyName}</h2>
+        <h2 style="color: #111;">Welcome ${name} to ${agencyName}</h2>
         <p>You've been added as a <strong>${role}</strong> on Aqari CRM.</p>
         <p>Your login details:</p>
         <table style="border-collapse: collapse; margin: 16px 0;">
@@ -59,7 +61,7 @@ export function agentInviteEmail({ name, email, password, role, agencyName, appU
         </a>
       </div>
     `,
-    text: `Welcome to ${agencyName}!\n\nYou've been added as a ${role} on Aqari CRM.\n\nEmail: ${email}\nPassword: ${password}\n\nSign in: ${appUrl}/sign-in`,
+    text: `Welcome ${name} to ${agencyName}!\n\nYou've been added as a ${role} on Aqari CRM.\n\nEmail: ${email}\nPassword: ${password}\n\nSign in: ${appUrl}/sign-in`,
   };
 }
 

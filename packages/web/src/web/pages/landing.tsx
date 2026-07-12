@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { setLanguage } from "../lib/i18n";
 import { Link } from "wouter";
-import { Building2, MessageCircle, BarChart3, Users, CheckCircle, Globe, ArrowRight, Zap, Shield, Clock } from "lucide-react";
+import { Building2, MessageCircle, BarChart3, Users, CheckCircle, Globe, ArrowRight, Zap, Clock } from "lucide-react";
 
 export default function LandingPage() {
   const { t, i18n } = useTranslation();

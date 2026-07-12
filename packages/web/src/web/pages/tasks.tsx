@@ -214,27 +214,27 @@ function TaskModal({ task, agentOptions, isAdminOrManager, onClose }: { task?: a
       <div className="card w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-lg">{isEdit ? t("tasks.edit_task", "Edit Task") : t("tasks.new_task")}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+          <button type="button" aria-label={t("common.close", "Close")} onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
         </div>
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveMut.mutate(); }}>
           <div>
-            <label className="block text-sm font-medium mb-1.5">{t("tasks.task_title", "Title")} *</label>
-            <input className="input" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+            <label htmlFor="task-title" className="block text-sm font-medium mb-1.5">{t("tasks.task_title", "Title")} *</label>
+            <input aria-label={t("tasks.task_title", "Title")} id="task-title" className="input" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5">{t("tasks.type")}</label>
-            <select className="select" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+            <label htmlFor="task-type" className="block text-sm font-medium mb-1.5">{t("tasks.type")}</label>
+            <select id="task-type" className="select" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
               {TASK_TYPES.map(tp => <option key={tp} value={tp}>{t(`tasks.types.${tp}`)}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5">{t("tasks.due_date")}</label>
-            <input className="input" type="datetime-local" value={form.dueAt} onChange={e => setForm(f => ({ ...f, dueAt: e.target.value }))} />
+            <label htmlFor="task-due" className="block text-sm font-medium mb-1.5">{t("tasks.due_date")}</label>
+            <input aria-label={t("tasks.due_date")} id="task-due" className="input" type="datetime-local" value={form.dueAt} onChange={e => setForm(f => ({ ...f, dueAt: e.target.value }))} />
           </div>
           {isAdminOrManager && (
             <div>
-              <label className="block text-sm font-medium mb-1.5">{t("tasks.assigned_to", "Assigned To")}</label>
-              <select className="select" value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))}>
+              <label htmlFor="task-assignee" className="block text-sm font-medium mb-1.5">{t("tasks.assigned_to", "Assigned To")}</label>
+              <select id="task-assignee" className="select" value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))}>
                 <option value="">{t("leads.assign_to_me", "Assign to me")}</option>
                 {agentOptions.map((a: any) => <option key={a.id} value={a.id}>{a.name || a.email}</option>)}
               </select>

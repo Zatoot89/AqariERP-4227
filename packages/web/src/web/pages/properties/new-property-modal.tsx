@@ -28,7 +28,7 @@ export default function NewPropertyModal({ onClose, property }: { onClose: () =>
   async function uploadFile(file: File) {
     setUploading(true);
     try {
-      const res = await api.upload.presign.$post({ json: { filename: file.name, contentType: file.type } });
+      const res = await api.upload.presign.$post({ json: { filename: file.name, contentType: file.type, sizeBytes: file.size, propertyId: property?.id } });
       const { url, key } = await res.json();
       await fetch(url, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       setImageKeys(keys => [...keys, key]);
@@ -79,7 +79,7 @@ export default function NewPropertyModal({ onClose, property }: { onClose: () =>
       <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h2 className="font-semibold text-lg">{isEdit ? t("properties.edit_property", "Edit Property") : t("properties.new_property")}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+          <button type="button" aria-label={t("common.close", "Close")} onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
         </div>
         <form className="p-5 space-y-4" onSubmit={e => { e.preventDefault(); save.mutate(); }}>
           {/* Image upload */}
@@ -95,7 +95,7 @@ export default function NewPropertyModal({ onClose, property }: { onClose: () =>
                 <div className="grid grid-cols-4 gap-2 mb-3">
                   {previews.map((src, i) => (
                     <div key={i} className="relative aspect-square rounded-lg overflow-hidden group">
-                      <img src={src} className="w-full h-full object-cover" />
+                      <img src={src} alt={`${t("properties.photo", "Property photo")} ${i + 1}`} className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => removeImage(i)}
@@ -110,7 +110,7 @@ export default function NewPropertyModal({ onClose, property }: { onClose: () =>
               <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer" style={{ color: "var(--primary)" }}>
                 <Upload size={15} />
                 {uploading ? t("common.loading") : t("properties.upload_photos", "Upload or drag photos here")}
-                <input type="file" accept="image/*" multiple hidden onChange={e => handleFiles(e.target.files)} disabled={uploading} />
+                <input aria-label={t("properties.upload_photos", "Upload property photos")} type="file" accept="image/*" multiple hidden onChange={e => handleFiles(e.target.files)} disabled={uploading} />
               </label>
               {previews.length === 0 && (
                 <div className="flex items-center justify-center gap-1.5 text-xs text-gray-400 mt-1">

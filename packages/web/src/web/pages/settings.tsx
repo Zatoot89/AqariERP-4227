@@ -42,7 +42,14 @@ export default function SettingsPage() {
   async function uploadLogo(file: File) {
     setLogoUploading(true);
     try {
-      const res = await api.upload.presign.$post({ json: { filename: file.name, contentType: file.type } });
+      const res = await api.upload.presign.$post({
+        json: {
+          filename: file.name,
+          contentType: file.type,
+          sizeBytes: file.size,
+          purpose: "agency-logo",
+        },
+      });
       const { url, key } = await res.json();
       await fetch(url, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       await api.settings.agency.$patch({ json: { logoUrl: key } });
@@ -83,7 +90,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (agency) {
       setWaForm({
-        waAccessToken: agency.waAccessToken ?? "",
+        waAccessToken: "",
         waPhoneNumberId: agency.waPhoneNumberId ?? "",
       });
     }
@@ -116,15 +123,13 @@ export default function SettingsPage() {
         <h1 className="page-title">{t("nav.settings")}</h1>
       </div>
 
-      {/* Agency Profile */}
       <div className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1.25rem" }}>{t("settings.agencyProfile")}</h2>
 
-        {/* Logo upload */}
         <div className="flex items-center gap-4 mb-5">
           <div className="w-16 h-16 rounded-xl overflow-hidden flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--primary)" }}>
             {logoPreview ? (
-              <img src={logoPreview} className="w-full h-full object-cover" />
+              <img src={logoPreview} alt={t("settings.agencyLogo", "Agency logo")} className="w-full h-full object-cover" />
             ) : (
               <span className="text-white text-2xl font-bold">{(form.name || "A").charAt(0).toUpperCase()}</span>
             )}
@@ -132,7 +137,7 @@ export default function SettingsPage() {
           <div>
             <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer" style={{ color: "var(--primary)" }}>
               {logoUploading ? t("common.loading") : t("settings.uploadLogo", "Upload logo")}
-              <input type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && uploadLogo(e.target.files[0])} disabled={logoUploading} />
+              <input aria-label={t("settings.uploadLogo", "Upload logo")} type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && uploadLogo(e.target.files[0])} disabled={logoUploading} />
             </label>
             <p className="text-xs text-gray-400 mt-0.5">{t("settings.logoHelp", "Shown in the sidebar and on client-facing pages.")}</p>
           </div>
@@ -203,7 +208,6 @@ export default function SettingsPage() {
         </form>
       </div>
 
-      {/* WhatsApp Integration */}
       <div className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
           <div>
@@ -224,49 +228,52 @@ export default function SettingsPage() {
           {t("settings.whatsappHelp", "Get these from your Meta Developer App → WhatsApp → API Setup.")}
         </p>
         <form onSubmit={handleWaSave}>
-        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: "1rem" }}>
-          <div>
-            <label className="form-label">{t("settings.wapiToken")}</label>
-            <input
-              className="form-input"
-              type="password"
-              placeholder="EAAxxxxxxxx (permanent access token)"
-              value={waForm.waAccessToken}
-              onChange={e => setWaForm(f => ({ ...f, waAccessToken: e.target.value }))}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: "1rem" }}>
+            <div>
+              <label htmlFor="whatsapp-access-token" className="form-label">{t("settings.wapiToken")}</label>
+              <input
+                aria-label={t("settings.wapiToken")}
+                id="whatsapp-access-token"
+                className="form-input"
+                type="password"
+                placeholder={agency?.whatsappConfigured ? "Configured — enter a new token to replace it" : "EAAxxxxxxxx (permanent access token)"}
+                value={waForm.waAccessToken}
+                onChange={e => setWaForm(f => ({ ...f, waAccessToken: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label htmlFor="whatsapp-phone-number-id" className="form-label">{t("settings.wapiPhone")}</label>
+              <input
+                aria-label={t("settings.wapiPhone")}
+                id="whatsapp-phone-number-id"
+                className="form-input"
+                placeholder="Phone Number ID (e.g. 109xxxxxxxxxx)"
+                value={waForm.waPhoneNumberId}
+                onChange={e => setWaForm(f => ({ ...f, waPhoneNumberId: e.target.value }))}
+              />
+            </div>
           </div>
-          <div>
-            <label className="form-label">{t("settings.wapiPhone")}</label>
-            <input
-              className="form-input"
-              placeholder="Phone Number ID (e.g. 109xxxxxxxxxx)"
-              value={waForm.waPhoneNumberId}
-              onChange={e => setWaForm(f => ({ ...f, waPhoneNumberId: e.target.value }))}
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "1rem" }}>
+            <button className="btn btn-primary" type="submit" disabled={waMutation.isPending}>
+              {waMutation.isPending ? t("saving") : t("common.save")}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={testMutation.isPending || (!agency?.whatsappConfigured && (!waForm.waAccessToken || !waForm.waPhoneNumberId))}
+              onClick={() => testMutation.mutate()}
+            >
+              {testMutation.isPending ? t("common.loading") : t("settings.connect", "Test Connection")}
+            </button>
+            {waTestResult && (
+              <span style={{ fontSize: "0.8rem", fontWeight: 500, color: waTestResult.ok ? "#22c55e" : "#ef4444" }}>
+                {waTestResult.ok ? "✓" : "✗"} {waTestResult.message}
+              </span>
+            )}
           </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "1rem" }}>
-          <button className="btn btn-primary" type="submit" disabled={waMutation.isPending}>
-            {waMutation.isPending ? t("saving") : t("common.save")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={testMutation.isPending || !agency?.waAccessToken || !agency?.waPhoneNumberId}
-            onClick={() => testMutation.mutate()}
-          >
-            {testMutation.isPending ? t("common.loading") : t("settings.connect", "Test Connection")}
-          </button>
-          {waTestResult && (
-            <span style={{ fontSize: "0.8rem", fontWeight: 500, color: waTestResult.ok ? "#22c55e" : "#ef4444" }}>
-              {waTestResult.ok ? "✓" : "✗"} {waTestResult.message}
-            </span>
-          )}
-        </div>
         </form>
       </div>
 
-      {/* Billing */}
       <div className="card" style={{ padding: "1.5rem" }}>
         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1.25rem" }}>{t("settings.billing")}</h2>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "1rem", background: "var(--bg-secondary)", borderRadius: "0.75rem" }}>

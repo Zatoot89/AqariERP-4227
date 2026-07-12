@@ -269,12 +269,14 @@ export default function LeadDetailPage() {
           {/* Add note */}
           <div className="flex gap-2 mb-4">
             <textarea
+              aria-label={t("leads.note_placeholder")}
               className="input flex-1 resize-none min-h-[60px] text-sm"
               placeholder={t("leads.note_placeholder")}
               value={note}
               onChange={e => setNote(e.target.value)}
             />
             <button
+              aria-label={t("leads.add_note", "Add note")}
               className="btn-primary px-3 self-end"
               onClick={() => noteMut.mutate()}
               disabled={!note.trim() || noteMut.isPending}
@@ -373,11 +375,11 @@ export default function LeadDetailPage() {
             {showLinkProp && (
               <div className="mb-3">
                 <input
+                  aria-label={t("properties.search_placeholder", "Search properties")}
                   className="input text-sm mb-2"
                   placeholder="Search properties..."
                   value={propSearch}
                   onChange={e => setPropSearch(e.target.value)}
-                  autoFocus
                 />
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
                   {(allPropsData as any)?.properties
@@ -429,25 +431,28 @@ export default function LeadDetailPage() {
           <div className="card p-6 w-full max-w-sm space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-base">{t("tasks.new_task")}</h3>
-              <button onClick={() => setShowTaskModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label={t("common.close", "Close")} onClick={() => setShowTaskModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={18} />
               </button>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="label">{t("tasks.task_title")}</label>
+                <label htmlFor="lead-task-title" className="label">{t("tasks.task_title")}</label>
                 <input
+                  aria-label={t("tasks.task_title")}
+
+                  id="lead-task-title"
                   className="input"
                   placeholder={t("tasks.title_placeholder")}
                   value={taskForm.title}
                   onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))}
-                  autoFocus
                 />
               </div>
               <div>
-                <label className="label">{t("tasks.type")}</label>
+                <label htmlFor="lead-task-type" className="label">{t("tasks.type")}</label>
                 <select
+                  id="lead-task-type"
                   className="select"
                   value={taskForm.type}
                   onChange={e => setTaskForm(f => ({ ...f, type: e.target.value }))}
@@ -458,8 +463,11 @@ export default function LeadDetailPage() {
                 </select>
               </div>
               <div>
-                <label className="label">{t("tasks.due_date")}</label>
+                <label htmlFor="lead-task-due" className="label">{t("tasks.due_date")}</label>
                 <input
+                  aria-label={t("tasks.due_date")}
+
+                  id="lead-task-due"
                   type="datetime-local"
                   className="input"
                   value={taskForm.dueAt}
@@ -572,6 +580,7 @@ function WhatsappPanel({ leadId }: { leadId: string }) {
 
       <div className="flex gap-2">
         <input
+          aria-label={t("leads.wa_placeholder", "WhatsApp message")}
           className="input flex-1"
           placeholder={t("leads.wa_placeholder", "Type a WhatsApp message…")}
           value={text}
@@ -579,6 +588,7 @@ function WhatsappPanel({ leadId }: { leadId: string }) {
           onKeyDown={e => { if (e.key === "Enter" && text.trim()) sendMut.mutate(); }}
         />
         <button
+          aria-label={t("leads.send_message", "Send message")}
           className="btn-primary px-3"
           onClick={() => sendMut.mutate()}
           disabled={!text.trim() || sendMut.isPending}
