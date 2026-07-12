@@ -5,6 +5,11 @@ import * as schema from "../database/schema";
 import { requireAuth, requireRole, requireTenant } from "../middleware/auth";
 import { nanoid } from "../lib/id";
 import { presignGet } from "../lib/s3";
+import { parseJson } from "../lib/validation";
+import {
+  bootstrapAgencySchema,
+  updateAgencySchema,
+} from "../validation/schemas";
 
 function agencyLogoPrefix(agencyId: string): string {
   return `agencies/${agencyId}/branding/`;
@@ -33,65 +38,43 @@ async function safeAgency(agency: typeof schema.agencies.$inferSelect | undefine
 
 export const settings = new Hono()
   .post("/bootstrap", requireAuth, async (c) => {
-    const user = c.get("user")!;
-    const body = await c.req.json().catch(() => ({}));
+    const bodyResult = await parseJson(c, bootstrapAgencySchema);
+    if (!bodyResult.success) return bodyResult.response;
 
+    const user = c.get("user")!;
+    const body = bodyResult.data;
     const result = await db.transaction(async (tx) => {
-      const existingProfile = await tx
-        .select()
-        .from(schema.profiles)
-        .where(eq(schema.profiles.id, user.id))
-        .get();
+      const existingProfile = await tx.select().from(schema.profiles)
+        .where(eq(schema.profiles.id, user.id)).get();
 
       if (existingProfile?.active === 0) {
         return { error: "Account is inactive" as const };
       }
-
       if (existingProfile?.agencyId) {
-        const existingAgency = await tx
-          .select()
-          .from(schema.agencies)
-          .where(eq(schema.agencies.id, existingProfile.agencyId))
-          .get();
+        const existingAgency = await tx.select().from(schema.agencies)
+          .where(eq(schema.agencies.id, existingProfile.agencyId)).get();
         return { agency: existingAgency };
       }
 
-      const authUser = await tx
-        .select()
-        .from(schema.user)
-        .where(eq(schema.user.id, user.id))
-        .get();
+      const authUser = await tx.select().from(schema.user)
+        .where(eq(schema.user.id, user.id)).get();
       const agencyId = nanoid();
-      const [agency] = await tx
-        .insert(schema.agencies)
-        .values({
-          id: agencyId,
-          name:
-            typeof body.agencyName === "string" && body.agencyName.trim()
-              ? body.agencyName.trim()
-              : authUser?.name ?? "My Agency",
-          locale: body.locale === "ar" ? "ar" : "en",
-          country:
-            typeof body.country === "string" && body.country.trim()
-              ? body.country.trim().toUpperCase().slice(0, 2)
-              : "AE",
-        })
-        .returning();
+      const [agency] = await tx.insert(schema.agencies).values({
+        id: agencyId,
+        name: body.agencyName ?? authUser?.name ?? "My Agency",
+        locale: body.locale ?? "en",
+        country: body.country ?? "AE",
+      }).returning();
 
       if (existingProfile) {
-        await tx
-          .update(schema.profiles)
+        await tx.update(schema.profiles)
           .set({ agencyId, role: "admin", active: 1 })
           .where(eq(schema.profiles.id, user.id));
       } else {
         await tx.insert(schema.profiles).values({
-          id: user.id,
-          agencyId,
-          role: "admin",
-          active: 1,
+          id: user.id, agencyId, role: "admin", active: 1,
         });
       }
-
       return { agency };
     });
 
@@ -100,11 +83,8 @@ export const settings = new Hono()
   })
   .get("/agency", requireTenant, async (c) => {
     const agencyId = c.get("agencyId") as string;
-    const agency = await db
-      .select()
-      .from(schema.agencies)
-      .where(eq(schema.agencies.id, agencyId))
-      .get();
+    const agency = await db.select().from(schema.agencies)
+      .where(eq(schema.agencies.id, agencyId)).get();
     if (!agency) return c.json({ error: "Agency not found" }, 404);
     return c.json({ agency: await safeAgency(agency) }, 200);
   })
@@ -113,17 +93,16 @@ export const settings = new Hono()
     requireTenant,
     requireRole("admin", "manager"),
     async (c) => {
-      const agencyId = c.get("agencyId") as string;
-      const body = await c.req.json();
+      const bodyResult = await parseJson(c, updateAgencySchema);
+      if (!bodyResult.success) return bodyResult.response;
 
+      const agencyId = c.get("agencyId") as string;
+      const body = bodyResult.data;
       let logoUrl: string | null | undefined;
       if (body.logoUrl !== undefined) {
-        if (body.logoUrl === null || body.logoUrl === "") {
+        if (body.logoUrl === null) {
           logoUrl = null;
-        } else if (
-          typeof body.logoUrl === "string" &&
-          body.logoUrl.startsWith(agencyLogoPrefix(agencyId))
-        ) {
+        } else if (body.logoUrl.startsWith(agencyLogoPrefix(agencyId))) {
           logoUrl = body.logoUrl;
         } else {
           return c.json({ error: "Invalid agency logo key" }, 400);
@@ -131,44 +110,27 @@ export const settings = new Hono()
       }
 
       const clearWhatsappCredentials = body.clearWhatsappCredentials === true;
-      const accessToken =
-        typeof body.waAccessToken === "string" && body.waAccessToken.trim()
-          ? body.waAccessToken.trim()
-          : undefined;
-      const verifyToken =
-        typeof body.waVerifyToken === "string" && body.waVerifyToken.trim()
-          ? body.waVerifyToken.trim()
-          : undefined;
-      const phoneNumberId =
-        typeof body.waPhoneNumberId === "string" && body.waPhoneNumberId.trim()
-          ? body.waPhoneNumberId.trim()
-          : undefined;
-
-      const [agency] = await db
-        .update(schema.agencies)
-        .set({
-          name: body.name,
-          nameAr: body.nameAr,
-          country: body.country,
-          locale: body.locale,
-          currency: body.currency,
-          timezone: body.timezone,
-          ...(logoUrl !== undefined ? { logoUrl } : {}),
-          ...(clearWhatsappCredentials
-            ? {
-                waAccessToken: null,
-                waPhoneNumberId: null,
-                waVerifyToken: null,
-                waConnectedAt: null,
-              }
-            : {
-                ...(accessToken ? { waAccessToken: accessToken } : {}),
-                ...(phoneNumberId ? { waPhoneNumberId: phoneNumberId } : {}),
-                ...(verifyToken ? { waVerifyToken: verifyToken } : {}),
-              }),
-        })
-        .where(eq(schema.agencies.id, agencyId))
-        .returning();
+      const [agency] = await db.update(schema.agencies).set({
+        name: body.name,
+        nameAr: body.nameAr,
+        country: body.country,
+        locale: body.locale,
+        currency: body.currency,
+        timezone: body.timezone,
+        ...(logoUrl !== undefined ? { logoUrl } : {}),
+        ...(clearWhatsappCredentials
+          ? {
+              waAccessToken: null,
+              waPhoneNumberId: null,
+              waVerifyToken: null,
+              waConnectedAt: null,
+            }
+          : {
+              ...(body.waAccessToken ? { waAccessToken: body.waAccessToken } : {}),
+              ...(body.waPhoneNumberId ? { waPhoneNumberId: body.waPhoneNumberId } : {}),
+              ...(body.waVerifyToken ? { waVerifyToken: body.waVerifyToken } : {}),
+            }),
+      }).where(eq(schema.agencies.id, agencyId)).returning();
       return c.json({ agency: await safeAgency(agency) }, 200);
     },
   )
