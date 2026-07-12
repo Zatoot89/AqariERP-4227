@@ -1,9 +1,9 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { nanoid } from "../lib/id";
+import { verifyHmacSha256 } from "../lib/security";
 
 function verifyWebhookSignature(rawBody: string, signature: string | undefined): boolean {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
@@ -13,15 +13,7 @@ function verifyWebhookSignature(rawBody: string, signature: string | undefined):
       process.env.ALLOW_UNSIGNED_WHATSAPP_WEBHOOKS === "true"
     );
   }
-  if (!signature?.startsWith("sha256=")) return false;
-
-  const expectedHex = createHmac("sha256", appSecret).update(rawBody).digest("hex");
-  const receivedHex = signature.slice("sha256=".length);
-  if (!/^[a-f0-9]{64}$/i.test(receivedHex)) return false;
-
-  const expected = Buffer.from(expectedHex, "hex");
-  const received = Buffer.from(receivedHex, "hex");
-  return expected.length === received.length && timingSafeEqual(expected, received);
+  return verifyHmacSha256(rawBody, signature, appSecret);
 }
 
 function messageText(message: any): string {
