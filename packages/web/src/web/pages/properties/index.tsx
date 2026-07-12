@@ -58,13 +58,13 @@ export default function PropertiesPage() {
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input className="input ps-9" placeholder={t("properties.search_placeholder")} value={search} onChange={e => setSearch(e.target.value)} />
+          <input aria-label={t("properties.search_placeholder")} className="input ps-9" placeholder={t("properties.search_placeholder")} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="select w-auto" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+        <select aria-label={t("properties.all_types")} className="select w-auto" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
           <option value="">{t("properties.all_types")}</option>
           {["apartment","villa","office","land","commercial"].map(s => <option key={s} value={s}>{t(`leads.property_types.${s}`)}</option>)}
         </select>
-        <select className="select w-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+        <select aria-label={t("properties.all_statuses")} className="select w-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">{t("properties.all_statuses")}</option>
           {["available","reserved","sold","rented"].map(s => <option key={s} value={s}>{t(`properties.statuses.${s}`)}</option>)}
         </select>
@@ -89,6 +89,7 @@ export default function PropertiesPage() {
                 {/* Kebab menu */}
                 <div className="absolute top-2 end-2 z-10">
                   <button
+                    aria-label={t("common.actions", "Property actions")}
                     onClick={e => { e.stopPropagation(); setMenuOpenId(m => m === prop.id ? null : prop.id); }}
                     className="p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-sm"
                   >
@@ -115,7 +116,7 @@ export default function PropertiesPage() {
                 {/* Image or placeholder */}
                 {prop.imageUrls?.[0] ? (
                   <div className="h-36 overflow-hidden">
-                    <img src={prop.imageUrls[0]} className="w-full h-full object-cover" />
+                    <img src={prop.imageUrls[0]} alt={prop.title} className="w-full h-full object-cover" />
                   </div>
                 ) : (
                   <div className="h-36 flex items-center justify-center text-4xl" style={{ backgroundColor: "color-mix(in srgb, var(--primary) 8%, white)" }}>

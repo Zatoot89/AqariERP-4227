@@ -42,7 +42,7 @@ export default function SettingsPage() {
   async function uploadLogo(file: File) {
     setLogoUploading(true);
     try {
-      const res = await api.upload.presign.$post({ json: { filename: file.name, contentType: file.type } });
+      const res = await api.upload.presign.$post({ json: { filename: file.name, contentType: file.type, sizeBytes: file.size } });
       const { url, key } = await res.json();
       await fetch(url, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       await api.settings.agency.$patch({ json: { logoUrl: key } });
@@ -124,7 +124,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-4 mb-5">
           <div className="w-16 h-16 rounded-xl overflow-hidden flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--primary)" }}>
             {logoPreview ? (
-              <img src={logoPreview} className="w-full h-full object-cover" />
+              <img src={logoPreview} alt={t("settings.agencyLogo", "Agency logo")} className="w-full h-full object-cover" />
             ) : (
               <span className="text-white text-2xl font-bold">{(form.name || "A").charAt(0).toUpperCase()}</span>
             )}
@@ -132,7 +132,7 @@ export default function SettingsPage() {
           <div>
             <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer" style={{ color: "var(--primary)" }}>
               {logoUploading ? t("common.loading") : t("settings.uploadLogo", "Upload logo")}
-              <input type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && uploadLogo(e.target.files[0])} disabled={logoUploading} />
+              <input aria-label={t("settings.uploadLogo", "Upload logo")} type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && uploadLogo(e.target.files[0])} disabled={logoUploading} />
             </label>
             <p className="text-xs text-gray-400 mt-0.5">{t("settings.logoHelp", "Shown in the sidebar and on client-facing pages.")}</p>
           </div>

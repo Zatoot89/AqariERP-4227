@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
-import { Plus, X, UserPlus, UserX, UserCheck, Users } from "lucide-react";
+import { X, UserPlus, UserX, UserCheck, Users } from "lucide-react";
 
 const ROLES = ["agent", "manager", "admin"];
 
@@ -71,7 +71,7 @@ export default function AgentsPage() {
           <div className="card p-6 w-full max-w-sm space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-base">{t("agents.invite")}</h3>
-              <button onClick={() => setShowInvite(false)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label={t("common.close", "Close")} onClick={() => setShowInvite(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={18} />
               </button>
             </div>
@@ -82,18 +82,19 @@ export default function AgentsPage() {
 
             <div className="space-y-3">
               <div>
-                <label className="label">{t("field.name")}</label>
+                <label htmlFor="agent-name" className="label">{t("field.name")}</label>
                 <input
+                  id="agent-name"
                   className="input"
                   placeholder="Full Name"
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  autoFocus
                 />
               </div>
               <div>
-                <label className="label">{t("field.email")}</label>
+                <label htmlFor="agent-email" className="label">{t("field.email")}</label>
                 <input
+                  id="agent-email"
                   type="email"
                   className="input"
                   placeholder="agent@email.com"
@@ -102,8 +103,9 @@ export default function AgentsPage() {
                 />
               </div>
               <div>
-                <label className="label">{t("field.role")}</label>
+                <label htmlFor="agent-role" className="label">{t("field.role")}</label>
                 <select
+                  id="agent-role"
                   className="select"
                   value={form.role}
                   onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
@@ -114,8 +116,9 @@ export default function AgentsPage() {
                 </select>
               </div>
               <div>
-                <label className="label">{t("field.password")} <span className="text-gray-400 text-xs">{t("agents.password_hint", "(optional — auto-generated and emailed to them if left blank)")}</span></label>
+                <label htmlFor="agent-password" className="label">{t("field.password")} <span className="text-gray-400 text-xs">{t("agents.password_hint", "(optional — auto-generated and emailed to them if left blank)")}</span></label>
                 <input
+                  id="agent-password"
                   type="password"
                   className="input"
                   placeholder="Leave blank to auto-generate"
@@ -194,6 +197,7 @@ function AgentCard({ agent, t }: { agent: any; t: any }) {
           <div className="flex items-center gap-2 mt-1">
             {editRole ? (
               <select
+                aria-label={t("field.role")}
                 className="select text-xs py-0.5 px-1.5 h-auto"
                 defaultValue={agent.role}
                 onChange={e => roleMut.mutate(e.target.value)}
@@ -216,6 +220,7 @@ function AgentCard({ agent, t }: { agent: any; t: any }) {
           </div>
         </div>
         <button
+          aria-label={isActive ? t("agents.deactivate", "Deactivate") : t("agents.reactivate", "Reactivate")}
           onClick={() => activeMut.mutate(isActive ? 0 : 1)}
           disabled={activeMut.isPending}
           title={isActive ? t("agents.deactivate", "Deactivate") : t("agents.reactivate", "Reactivate")}

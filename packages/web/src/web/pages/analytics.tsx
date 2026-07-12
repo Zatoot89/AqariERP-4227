@@ -59,7 +59,7 @@ export default function AnalyticsPage() {
     <div className="page-content">
       <div className="page-header">
         <h1 className="page-title">{t("nav.analytics")}</h1>
-        <select className="select w-auto" value={range} onChange={e => setRange(e.target.value)}>
+        <select aria-label={t("analytics.date_range", "Analytics date range")} className="select w-auto" value={range} onChange={e => setRange(e.target.value)}>
           {RANGES.map(r => <option key={r.value} value={r.value}>{t(r.labelKey, r.fallback)}</option>)}
         </select>
       </div>

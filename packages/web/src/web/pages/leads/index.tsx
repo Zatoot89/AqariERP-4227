@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { api } from "../../lib/api";
-import { Plus, Search, LayoutGrid, List, Phone, MessageCircle } from "lucide-react";
+import { Plus, Search, LayoutGrid, List, Phone, MessageCircle, Users } from "lucide-react";
 import NewLeadModal from "./new-lead-modal";
 
 const STAGES = ["new", "contacted", "viewing", "offer", "closed", "lost"];
@@ -108,23 +108,24 @@ export default function LeadsPage() {
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
+            aria-label={t("leads.search_placeholder")}
             className="input ps-9"
             placeholder={t("leads.search_placeholder")}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <select className="select w-auto" value={stageFilter} onChange={e => setStageFilter(e.target.value)}>
+        <select aria-label={t("leads.all_stages")} className="select w-auto" value={stageFilter} onChange={e => setStageFilter(e.target.value)}>
           <option value="">{t("leads.all_stages")}</option>
           {STAGES.map(s => <option key={s} value={s}>{t(`leads.stages.${s}`)}</option>)}
         </select>
-        <select className="select w-auto" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
+        <select aria-label={t("leads.all_sources")} className="select w-auto" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
           <option value="">{t("leads.all_sources")}</option>
           {SOURCES.map(s => <option key={s} value={s}>{t(`leads.sources.${s}`)}</option>)}
         </select>
         <div className="flex gap-1 p-1 rounded-lg border border-gray-200 bg-white">
-          <button onClick={() => setView("kanban")} className={`p-1.5 rounded ${view === "kanban" ? "bg-gray-100" : "hover:bg-gray-50"}`}><LayoutGrid size={16} /></button>
-          <button onClick={() => setView("list")} className={`p-1.5 rounded ${view === "list" ? "bg-gray-100" : "hover:bg-gray-50"}`}><List size={16} /></button>
+          <button aria-label={t("leads.kanban_view", "Kanban view")} onClick={() => setView("kanban")} className={`p-1.5 rounded ${view === "kanban" ? "bg-gray-100" : "hover:bg-gray-50"}`}><LayoutGrid size={16} /></button>
+          <button aria-label={t("leads.list_view", "List view")} onClick={() => setView("list")} className={`p-1.5 rounded ${view === "list" ? "bg-gray-100" : "hover:bg-gray-50"}`}><List size={16} /></button>
         </div>
       </div>
 
@@ -164,11 +165,13 @@ export default function LeadsPage() {
                         onDragEnd={handleDragEnd}
                         style={{ cursor: "grab" }}
                       >
-                        <Link to={`/leads/${lead.id}`}>
-                          <div className="kanban-card" onClick={e => {
-                            // Don't navigate if we just dropped
+                        <Link
+                          to={`/leads/${lead.id}`}
+                          onClick={e => {
                             if (draggingId.current) e.preventDefault();
-                          }}>
+                          }}
+                        >
+                          <div className="kanban-card">
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-semibold truncate">{lead.name}</p>
@@ -192,6 +195,7 @@ export default function LeadsPage() {
                               {lead.phone && (
                                 <a
                                   href={`tel:${lead.phone}`}
+                                  aria-label={`${t("leads.call", "Call")} ${lead.name}`}
                                   onClick={e => e.stopPropagation()}
                                   className="p-1.5 rounded-md bg-gray-100 hover:bg-gray-200 transition-colors"
                                 >
@@ -201,6 +205,7 @@ export default function LeadsPage() {
                               {lead.whatsappId && (
                                 <a
                                   href={`https://wa.me/${lead.whatsappId}`}
+                                  aria-label={`${t("leads.whatsapp", "WhatsApp")} ${lead.name}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   onClick={e => e.stopPropagation()}

@@ -57,7 +57,7 @@ export default function NewLeadModal({ onClose, lead }: { onClose: () => void; l
       <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h2 className="font-semibold text-lg">{isEdit ? t("leads.edit_lead", "Edit Lead") : t("leads.new_lead")}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+          <button type="button" aria-label={t("common.close", "Close")} onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
         </div>
         <form
           className="p-5 space-y-4"
@@ -103,12 +103,12 @@ export default function NewLeadModal({ onClose, lead }: { onClose: () => void; l
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1.5">Min Budget</label>
-              <input className="input" type="number" {...field("budgetMin")} />
+              <label htmlFor="lead-budget-min" className="block text-sm font-medium mb-1.5">Min Budget</label>
+              <input id="lead-budget-min" className="input" type="number" {...field("budgetMin")} />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">Max Budget</label>
-              <input className="input" type="number" {...field("budgetMax")} />
+              <label htmlFor="lead-budget-max" className="block text-sm font-medium mb-1.5">Max Budget</label>
+              <input id="lead-budget-max" className="input" type="number" {...field("budgetMax")} />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">{t("common.currency")}</label>

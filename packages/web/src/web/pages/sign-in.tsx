@@ -123,8 +123,9 @@ export default function SignInPage() {
           >
             {tab === "signup" && (
               <div>
-                <label className="block text-sm font-medium mb-1.5">{t("auth.name")}</label>
+                <label htmlFor="auth-name" className="block text-sm font-medium mb-1.5">{t("auth.name")}</label>
                 <input
+                  id="auth-name"
                   className="input"
                   type="text"
                   value={name}
@@ -134,7 +135,7 @@ export default function SignInPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium mb-1.5">{t("auth.email")}</label>
+              <label htmlFor="auth-email" className="block text-sm font-medium mb-1.5">{t("auth.email")}</label>
               <input
                 className="input"
                 type="email"
@@ -144,7 +145,7 @@ export default function SignInPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">{t("auth.password")}</label>
+              <label htmlFor="auth-password" className="block text-sm font-medium mb-1.5">{t("auth.password")}</label>
               <input
                 className="input"
                 type="password"
