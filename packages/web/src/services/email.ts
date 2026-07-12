@@ -1,8 +1,5 @@
 import { Resend } from "resend";
 
-// Lazily constructed — the Resend SDK throws at construction time if there's no
-// API key, and we want the whole server (not just email) to still boot and work
-// fine before a key is configured in Settings/env.
 let resend: Resend | null = null;
 function getClient(): Resend | null {
   if (!process.env.RESEND_API_KEY) return null;
@@ -24,15 +21,19 @@ export async function sendEmail({ to, subject, text, html, replyTo }: SendEmailO
     console.warn(`[email] RESEND_API_KEY not set — skipping email "${subject}" to ${to}`);
     return null;
   }
-  const { data, error } = await client.emails.send({
-    from: "Aqari CRM <onboarding@resend.dev>",
-    to: Array.isArray(to) ? to : [to],
-    subject,
-    text,
-    html,
-    replyTo,
-  });
 
+  const recipients = Array.isArray(to) ? to : [to];
+  const base = {
+    from: "Aqari CRM <onboarding@resend.dev>",
+    to: recipients,
+    subject,
+    ...(replyTo ? { replyTo } : {}),
+  };
+  const message = html
+    ? { ...base, html, ...(text ? { text } : {}) }
+    : { ...base, text: text ?? "" };
+
+  const { data, error } = await client.emails.send(message);
   if (error) {
     console.error(`[email] Failed to send "${subject}" to ${to}:`, error);
     return null;
