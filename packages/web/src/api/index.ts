@@ -5,6 +5,11 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { auth } from "./auth";
 import { authMiddleware, requireTenant } from "./middleware/auth";
 import { s3 } from "./lib/s3";
+import {
+  buildAllowedOrigins,
+  resolveAllowedOrigin,
+  sanitizeUploadFilename,
+} from "./lib/security";
 import { leads } from "./routes/leads";
 import { properties } from "./routes/properties";
 import { tasks } from "./routes/tasks";
@@ -17,28 +22,16 @@ import { seed } from "./routes/seed";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
-
-function configuredOrigins(): Set<string> {
-  const origins = new Set(
-    (process.env.ALLOWED_ORIGINS ?? "")
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean),
-  );
-  if (process.env.WEBSITE_URL) origins.add(process.env.WEBSITE_URL);
-  if (process.env.NODE_ENV !== "production") {
-    origins.add("http://localhost:3000");
-    origins.add("http://localhost:4200");
-  }
-  return origins;
-}
-
-const allowedOrigins = configuredOrigins();
+const allowedOrigins = buildAllowedOrigins({
+  configured: process.env.ALLOWED_ORIGINS,
+  websiteUrl: process.env.WEBSITE_URL,
+  nodeEnv: process.env.NODE_ENV,
+});
 
 const app = new Hono()
   .use(
     cors({
-      origin: (origin) => (allowedOrigins.has(origin) ? origin : ""),
+      origin: (origin) => resolveAllowedOrigin(origin, allowedOrigins),
       credentials: true,
       exposeHeaders: ["set-auth-token"],
       allowHeaders: ["Authorization", "Content-Type"],
@@ -66,16 +59,15 @@ const app = new Hono()
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
       return c.json({ error: "Unsupported image type" }, 400);
     }
-    if (sizeBytes !== undefined && (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_IMAGE_BYTES)) {
+    if (
+      sizeBytes !== undefined &&
+      (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_IMAGE_BYTES)
+    ) {
       return c.json({ error: "Image exceeds the 10 MB limit" }, 400);
     }
     if (!process.env.S3_BUCKET) return c.json({ error: "Storage is not configured" }, 503);
 
-    const safeFilename = filename
-      .split(/[\\/]/)
-      .pop()!
-      .replace(/[^a-zA-Z0-9_.-]/g, "_")
-      .slice(-180);
+    const safeFilename = sanitizeUploadFilename(filename);
     const safePropertyId =
       typeof propertyId === "string" && /^[a-zA-Z0-9_-]+$/.test(propertyId)
         ? propertyId
