@@ -14,6 +14,8 @@ import {
   resolveAllowedOrigin,
   sanitizeUploadFilename,
 } from "./lib/security";
+import { parseJson } from "./lib/validation";
+import { uploadRequestSchema } from "./validation/schemas";
 import { leads } from "./routes/leads";
 import { properties } from "./routes/properties";
 import { tasks } from "./routes/tasks";
@@ -25,7 +27,6 @@ import { whatsapp } from "./routes/whatsapp";
 import { seed } from "./routes/seed";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const allowedOrigins = buildAllowedOrigins({
   configured: process.env.ALLOWED_ORIGINS,
   websiteUrl: process.env.WEBSITE_URL,
@@ -54,43 +55,24 @@ const app = new Hono()
   .use("*", authMiddleware)
   .get("/health", (c) => c.json({ status: "ok" }, 200))
   .post("/upload/presign", requireTenant, async (c) => {
+    const bodyResult = await parseJson(c, uploadRequestSchema);
+    if (!bodyResult.success) return bodyResult.response;
+
     const user = c.get("user")!;
     const agencyId = c.get("agencyId") as string;
-    const { filename, contentType, sizeBytes, propertyId, purpose } = await c.req.json();
-
-    if (typeof filename !== "string" || !filename.trim()) {
-      return c.json({ error: "filename is required" }, 400);
-    }
-    if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
-      return c.json({ error: "Unsupported image type" }, 400);
-    }
-    if (
-      sizeBytes !== undefined &&
-      (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_IMAGE_BYTES)
-    ) {
-      return c.json({ error: "Image exceeds the 10 MB limit" }, 400);
-    }
+    const { filename, contentType, sizeBytes, propertyId, purpose } = bodyResult.data;
     if (!process.env.S3_BUCKET) return c.json({ error: "Storage is not configured" }, 503);
 
     const safeFilename = sanitizeUploadFilename(filename);
     let keyPrefix: string;
-
     if (purpose === "agency-logo") {
       keyPrefix = `agencies/${agencyId}/branding`;
-    } else if (propertyId !== undefined && propertyId !== null && propertyId !== "") {
-      if (typeof propertyId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(propertyId)) {
-        return c.json({ error: "Invalid property ID" }, 400);
-      }
-      const property = await db
-        .select({ id: schema.properties.id })
-        .from(schema.properties)
-        .where(
-          and(
-            eq(schema.properties.id, propertyId),
-            eq(schema.properties.agencyId, agencyId),
-          ),
-        )
-        .get();
+    } else if (propertyId) {
+      const property = await db.select({ id: schema.properties.id }).from(schema.properties)
+        .where(and(
+          eq(schema.properties.id, propertyId),
+          eq(schema.properties.agencyId, agencyId),
+        )).get();
       if (!property) return c.json({ error: "Property not found" }, 404);
       keyPrefix = `agencies/${agencyId}/properties/${propertyId}`;
     } else {
