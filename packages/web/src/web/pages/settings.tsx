@@ -42,7 +42,14 @@ export default function SettingsPage() {
   async function uploadLogo(file: File) {
     setLogoUploading(true);
     try {
-      const res = await api.upload.presign.$post({ json: { filename: file.name, contentType: file.type, sizeBytes: file.size } });
+      const res = await api.upload.presign.$post({
+        json: {
+          filename: file.name,
+          contentType: file.type,
+          sizeBytes: file.size,
+          purpose: "agency-logo",
+        },
+      });
       const { url, key } = await res.json();
       await fetch(url, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       await api.settings.agency.$patch({ json: { logoUrl: key } });
@@ -83,7 +90,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (agency) {
       setWaForm({
-        waAccessToken: agency.waAccessToken ?? "",
+        waAccessToken: "",
         waPhoneNumberId: agency.waPhoneNumberId ?? "",
       });
     }
@@ -229,7 +236,7 @@ export default function SettingsPage() {
                 id="whatsapp-access-token"
                 className="form-input"
                 type="password"
-                placeholder="EAAxxxxxxxx (permanent access token)"
+                placeholder={agency?.whatsappConfigured ? "Configured — enter a new token to replace it" : "EAAxxxxxxxx (permanent access token)"}
                 value={waForm.waAccessToken}
                 onChange={e => setWaForm(f => ({ ...f, waAccessToken: e.target.value }))}
               />
