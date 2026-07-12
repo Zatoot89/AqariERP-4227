@@ -126,7 +126,6 @@ export default function SignInPage() {
                 <label htmlFor="auth-name" className="block text-sm font-medium mb-1.5">{t("auth.name")}</label>
                 <input
                   aria-label={t("auth.name")}
-
                   id="auth-name"
                   className="input"
                   type="text"
@@ -139,6 +138,8 @@ export default function SignInPage() {
             <div>
               <label htmlFor="auth-email" className="block text-sm font-medium mb-1.5">{t("auth.email")}</label>
               <input
+                aria-label={t("auth.email")}
+                id="auth-email"
                 className="input"
                 type="email"
                 value={email}
@@ -149,6 +150,8 @@ export default function SignInPage() {
             <div>
               <label htmlFor="auth-password" className="block text-sm font-medium mb-1.5">{t("auth.password")}</label>
               <input
+                aria-label={t("auth.password")}
+                id="auth-password"
                 className="input"
                 type="password"
                 value={password}
