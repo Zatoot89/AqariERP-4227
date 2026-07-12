@@ -6,6 +6,10 @@ import { requireAuth, requireRole, requireTenant } from "../middleware/auth";
 import { nanoid } from "../lib/id";
 import { presignGet } from "../lib/s3";
 
+function agencyLogoPrefix(agencyId: string): string {
+  return `agencies/${agencyId}/branding/`;
+}
+
 async function safeAgency(agency: typeof schema.agencies.$inferSelect | undefined) {
   if (!agency) return agency;
   const {
@@ -16,7 +20,10 @@ async function safeAgency(agency: typeof schema.agencies.$inferSelect | undefine
   void redactedAccessToken;
   void redactedVerifyToken;
 
-  const logoImageUrl = agency.logoUrl ? await presignGet(agency.logoUrl, 86400) : null;
+  const logoImageUrl =
+    agency.logoUrl?.startsWith(agencyLogoPrefix(agency.id))
+      ? await presignGet(agency.logoUrl, 86400)
+      : null;
   return {
     ...visibleAgency,
     logoImageUrl,
@@ -108,6 +115,35 @@ export const settings = new Hono()
     async (c) => {
       const agencyId = c.get("agencyId") as string;
       const body = await c.req.json();
+
+      let logoUrl: string | null | undefined;
+      if (body.logoUrl !== undefined) {
+        if (body.logoUrl === null || body.logoUrl === "") {
+          logoUrl = null;
+        } else if (
+          typeof body.logoUrl === "string" &&
+          body.logoUrl.startsWith(agencyLogoPrefix(agencyId))
+        ) {
+          logoUrl = body.logoUrl;
+        } else {
+          return c.json({ error: "Invalid agency logo key" }, 400);
+        }
+      }
+
+      const clearWhatsappCredentials = body.clearWhatsappCredentials === true;
+      const accessToken =
+        typeof body.waAccessToken === "string" && body.waAccessToken.trim()
+          ? body.waAccessToken.trim()
+          : undefined;
+      const verifyToken =
+        typeof body.waVerifyToken === "string" && body.waVerifyToken.trim()
+          ? body.waVerifyToken.trim()
+          : undefined;
+      const phoneNumberId =
+        typeof body.waPhoneNumberId === "string" && body.waPhoneNumberId.trim()
+          ? body.waPhoneNumberId.trim()
+          : undefined;
+
       const [agency] = await db
         .update(schema.agencies)
         .set({
@@ -117,10 +153,19 @@ export const settings = new Hono()
           locale: body.locale,
           currency: body.currency,
           timezone: body.timezone,
-          logoUrl: body.logoUrl,
-          waAccessToken: body.waAccessToken,
-          waPhoneNumberId: body.waPhoneNumberId,
-          waVerifyToken: body.waVerifyToken,
+          ...(logoUrl !== undefined ? { logoUrl } : {}),
+          ...(clearWhatsappCredentials
+            ? {
+                waAccessToken: null,
+                waPhoneNumberId: null,
+                waVerifyToken: null,
+                waConnectedAt: null,
+              }
+            : {
+                ...(accessToken ? { waAccessToken: accessToken } : {}),
+                ...(phoneNumberId ? { waPhoneNumberId: phoneNumberId } : {}),
+                ...(verifyToken ? { waVerifyToken: verifyToken } : {}),
+              }),
         })
         .where(eq(schema.agencies.id, agencyId))
         .returning();
