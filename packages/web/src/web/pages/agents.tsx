@@ -65,7 +65,6 @@ export default function AgentsPage() {
             ))}
       </div>
 
-      {/* Invite Modal */}
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
           <div className="card p-6 w-full max-w-sm space-y-4">
@@ -85,7 +84,6 @@ export default function AgentsPage() {
                 <label htmlFor="agent-name" className="label">{t("field.name")}</label>
                 <input
                   aria-label={t("field.name")}
-
                   id="agent-name"
                   className="input"
                   placeholder="Full Name"
@@ -97,7 +95,6 @@ export default function AgentsPage() {
                 <label htmlFor="agent-email" className="label">{t("field.email")}</label>
                 <input
                   aria-label={t("field.email")}
-
                   id="agent-email"
                   type="email"
                   className="input"
@@ -123,7 +120,6 @@ export default function AgentsPage() {
                 <label htmlFor="agent-password" className="label">{t("field.password")} <span className="text-gray-400 text-xs">{t("agents.password_hint", "(optional — auto-generated and emailed to them if left blank)")}</span></label>
                 <input
                   aria-label={t("field.password")}
-
                   id="agent-password"
                   type="password"
                   className="input"
@@ -207,7 +203,6 @@ function AgentCard({ agent, t }: { agent: any; t: any }) {
                 className="select text-xs py-0.5 px-1.5 h-auto"
                 defaultValue={agent.role}
                 onChange={e => roleMut.mutate(e.target.value)}
-                autoFocus
                 onBlur={() => setEditRole(false)}
                 style={{ fontSize: "10px", padding: "2px 6px" }}
               >
