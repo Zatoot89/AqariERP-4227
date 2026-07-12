@@ -125,6 +125,8 @@ export default function SignInPage() {
               <div>
                 <label htmlFor="auth-name" className="block text-sm font-medium mb-1.5">{t("auth.name")}</label>
                 <input
+                  aria-label={t("auth.name")}
+
                   id="auth-name"
                   className="input"
                   type="text"

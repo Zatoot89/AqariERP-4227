@@ -110,7 +110,7 @@ export default function NewPropertyModal({ onClose, property }: { onClose: () =>
               <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer" style={{ color: "var(--primary)" }}>
                 <Upload size={15} />
                 {uploading ? t("common.loading") : t("properties.upload_photos", "Upload or drag photos here")}
-                <input type="file" accept="image/*" multiple hidden onChange={e => handleFiles(e.target.files)} disabled={uploading} />
+                <input aria-label={t("properties.upload_photos", "Upload property photos")} type="file" accept="image/*" multiple hidden onChange={e => handleFiles(e.target.files)} disabled={uploading} />
               </label>
               {previews.length === 0 && (
                 <div className="flex items-center justify-center gap-1.5 text-xs text-gray-400 mt-1">

@@ -251,11 +251,11 @@ export default function LeadsPage() {
                 {isLoading
                   ? [1,2,3,4,5].map(i => (
                     <tr key={i} className="border-b border-gray-50">
-                      {[1,2,3,4,5,6].map(j => <td key={j} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded animate-pulse" /></td>)}
+                      {[1,2,3,4,5,6].map(j => <td aria-label={t("common.loading", "Loading")} key={j} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded animate-pulse" /></td>)}
                     </tr>
                   ))
                   : leads.length === 0
-                    ? <tr><td colSpan={6} className="py-16">
+                    ? <tr><td aria-label={t("leads.empty_state", "No leads")} colSpan={6} className="py-16">
                         <div className="flex flex-col items-center gap-3 text-gray-400">
                           <Users size={32} className="text-gray-300" />
                           <p className="text-sm">{search || stageFilter || sourceFilter ? t("leads.no_matches", "No leads match your filters") : t("leads.empty_state", "No leads yet — add your first one to get started")}</p>
@@ -268,8 +268,8 @@ export default function LeadsPage() {
                       </td></tr>
                     : leads.map((lead: any) => (
                       <tr key={lead.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
-                        <td className="px-4 py-3">
-                          <Link to={`/leads/${lead.id}`}>
+                        <td aria-label={lead.name} className="px-4 py-3">
+                          <Link to={`/leads/${lead.id}`} aria-label={lead.name}>
                             <div>
                               <p className="font-medium">{lead.name}</p>
                               {lead.nameAr && <p className="text-xs text-gray-400" dir="rtl">{lead.nameAr}</p>}

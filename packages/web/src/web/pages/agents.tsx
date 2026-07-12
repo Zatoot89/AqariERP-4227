@@ -84,6 +84,8 @@ export default function AgentsPage() {
               <div>
                 <label htmlFor="agent-name" className="label">{t("field.name")}</label>
                 <input
+                  aria-label={t("field.name")}
+
                   id="agent-name"
                   className="input"
                   placeholder="Full Name"
@@ -94,6 +96,8 @@ export default function AgentsPage() {
               <div>
                 <label htmlFor="agent-email" className="label">{t("field.email")}</label>
                 <input
+                  aria-label={t("field.email")}
+
                   id="agent-email"
                   type="email"
                   className="input"
@@ -118,6 +122,8 @@ export default function AgentsPage() {
               <div>
                 <label htmlFor="agent-password" className="label">{t("field.password")} <span className="text-gray-400 text-xs">{t("agents.password_hint", "(optional — auto-generated and emailed to them if left blank)")}</span></label>
                 <input
+                  aria-label={t("field.password")}
+
                   id="agent-password"
                   type="password"
                   className="input"

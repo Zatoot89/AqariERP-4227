@@ -153,7 +153,7 @@ export default function AnalyticsPage() {
             {agents.map((agent: any, i: number) => (
               <tr key={agent.id} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "0.75rem", color: "var(--text-secondary)", fontWeight: 600 }}>{i + 1}</td>
-                <td style={{ padding: "0.75rem" }}>
+                <td aria-label={agent.name ?? t("unknown")} style={{ padding: "0.75rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
                     <div style={{
                       width: "32px", height: "32px", borderRadius: "50%",

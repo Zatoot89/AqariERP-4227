@@ -440,6 +440,8 @@ export default function LeadDetailPage() {
               <div>
                 <label htmlFor="lead-task-title" className="label">{t("tasks.task_title")}</label>
                 <input
+                  aria-label={t("tasks.task_title")}
+
                   id="lead-task-title"
                   className="input"
                   placeholder={t("tasks.title_placeholder")}
@@ -463,6 +465,8 @@ export default function LeadDetailPage() {
               <div>
                 <label htmlFor="lead-task-due" className="label">{t("tasks.due_date")}</label>
                 <input
+                  aria-label={t("tasks.due_date")}
+
                   id="lead-task-due"
                   type="datetime-local"
                   className="input"

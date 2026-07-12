@@ -219,7 +219,7 @@ function TaskModal({ task, agentOptions, isAdminOrManager, onClose }: { task?: a
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); saveMut.mutate(); }}>
           <div>
             <label htmlFor="task-title" className="block text-sm font-medium mb-1.5">{t("tasks.task_title", "Title")} *</label>
-            <input id="task-title" className="input" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+            <input aria-label={t("tasks.task_title", "Title")} id="task-title" className="input" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
           </div>
           <div>
             <label htmlFor="task-type" className="block text-sm font-medium mb-1.5">{t("tasks.type")}</label>
@@ -229,7 +229,7 @@ function TaskModal({ task, agentOptions, isAdminOrManager, onClose }: { task?: a
           </div>
           <div>
             <label htmlFor="task-due" className="block text-sm font-medium mb-1.5">{t("tasks.due_date")}</label>
-            <input id="task-due" className="input" type="datetime-local" value={form.dueAt} onChange={e => setForm(f => ({ ...f, dueAt: e.target.value }))} />
+            <input aria-label={t("tasks.due_date")} id="task-due" className="input" type="datetime-local" value={form.dueAt} onChange={e => setForm(f => ({ ...f, dueAt: e.target.value }))} />
           </div>
           {isAdminOrManager && (
             <div>
