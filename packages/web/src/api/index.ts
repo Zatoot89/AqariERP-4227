@@ -96,6 +96,13 @@ const app = new Hono()
   .route("/whatsapp", whatsapp);
 
 if (process.env.NODE_ENV !== "production" && process.env.ENABLE_DEMO_SEED === "true") {
+  app.use("/seed/*", async (c, next) => {
+    const seedSecret = process.env.DEMO_SEED_SECRET;
+    if (!seedSecret || c.req.header("x-demo-seed-secret") !== seedSecret) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    return next();
+  });
   app.route("/seed", seed);
 }
 
