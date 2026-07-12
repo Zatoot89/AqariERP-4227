@@ -9,7 +9,7 @@ import { useProfile } from "../hooks/use-profile";
 import { useAgency } from "../hooks/use-agency";
 import {
   LayoutDashboard, Users, Building2, CheckSquare,
-  UserCircle, BarChart3, Settings, LogOut, Menu, X, Globe
+  UserCircle, BarChart3, Settings, LogOut, Menu, Globe
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -56,7 +56,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white font-bold text-sm overflow-hidden shrink-0">
             {agency?.logoImageUrl ? (
-              <img src={agency.logoImageUrl} className="w-full h-full object-cover" />
+              <img src={agency.logoImageUrl} alt={`${agency.name ?? t("app_name")} logo`} className="w-full h-full object-cover" />
             ) : (
               "ع"
             )}
@@ -119,7 +119,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile sidebar */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
+          <button
+            type="button"
+            aria-label={t("common.close", "Close navigation")}
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setSidebarOpen(false)}
+          />
           <aside className="sidebar flex flex-col !transform-none" style={{ width: "var(--sidebar-w)" }}>
             <SidebarContent />
           </aside>
