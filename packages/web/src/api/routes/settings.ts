@@ -9,10 +9,13 @@ import { presignGet } from "../lib/s3";
 async function safeAgency(agency: typeof schema.agencies.$inferSelect | undefined) {
   if (!agency) return agency;
   const {
-    waAccessToken: _waAccessToken,
-    waVerifyToken: _waVerifyToken,
+    waAccessToken: redactedAccessToken,
+    waVerifyToken: redactedVerifyToken,
     ...visibleAgency
   } = agency;
+  void redactedAccessToken;
+  void redactedVerifyToken;
+
   const logoImageUrl = agency.logoUrl ? await presignGet(agency.logoUrl, 86400) : null;
   return {
     ...visibleAgency,
