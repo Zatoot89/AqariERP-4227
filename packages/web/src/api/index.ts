@@ -1,9 +1,12 @@
 import "./context";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { and, eq } from "drizzle-orm";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { auth } from "./auth";
+import { db } from "./database";
+import * as schema from "./database/schema";
 import { authMiddleware, requireTenant } from "./middleware/auth";
 import { s3 } from "./lib/s3";
 import {
@@ -51,8 +54,9 @@ const app = new Hono()
   .use("*", authMiddleware)
   .get("/health", (c) => c.json({ status: "ok" }, 200))
   .post("/upload/presign", requireTenant, async (c) => {
+    const user = c.get("user")!;
     const agencyId = c.get("agencyId") as string;
-    const { filename, contentType, sizeBytes, propertyId } = await c.req.json();
+    const { filename, contentType, sizeBytes, propertyId, purpose } = await c.req.json();
 
     if (typeof filename !== "string" || !filename.trim()) {
       return c.json({ error: "filename is required" }, 400);
@@ -69,12 +73,31 @@ const app = new Hono()
     if (!process.env.S3_BUCKET) return c.json({ error: "Storage is not configured" }, 503);
 
     const safeFilename = sanitizeUploadFilename(filename);
-    const safePropertyId =
-      typeof propertyId === "string" && /^[a-zA-Z0-9_-]+$/.test(propertyId)
-        ? propertyId
-        : "unassigned";
-    const key = `agencies/${agencyId}/properties/${safePropertyId}/${Date.now()}-${safeFilename}`;
+    let keyPrefix: string;
 
+    if (purpose === "agency-logo") {
+      keyPrefix = `agencies/${agencyId}/branding`;
+    } else if (propertyId !== undefined && propertyId !== null && propertyId !== "") {
+      if (typeof propertyId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(propertyId)) {
+        return c.json({ error: "Invalid property ID" }, 400);
+      }
+      const property = await db
+        .select({ id: schema.properties.id })
+        .from(schema.properties)
+        .where(
+          and(
+            eq(schema.properties.id, propertyId),
+            eq(schema.properties.agencyId, agencyId),
+          ),
+        )
+        .get();
+      if (!property) return c.json({ error: "Property not found" }, 404);
+      keyPrefix = `agencies/${agencyId}/properties/${propertyId}`;
+    } else {
+      keyPrefix = `agencies/${agencyId}/properties/drafts/${user.id}`;
+    }
+
+    const key = `${keyPrefix}/${Date.now()}-${safeFilename}`;
     const url = await getSignedUrl(
       s3,
       new PutObjectCommand({
