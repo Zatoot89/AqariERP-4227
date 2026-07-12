@@ -69,5 +69,6 @@ jobs:
             typecheck.log
             test.log
             build.log
+            packages/web/src
           if-no-files-found: ignore
           retention-days: 7
