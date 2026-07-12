@@ -1,3 +1,4 @@
+import "./context";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
