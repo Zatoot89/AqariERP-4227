@@ -4,8 +4,16 @@ import { db } from "../database";
 import * as schema from "../database/schema";
 import { requireTenant } from "../middleware/auth";
 import { nanoid } from "../lib/id";
-
-const LEAD_STAGES = new Set(["new", "contacted", "viewing", "offer", "closed", "lost"]);
+import { parseJson, parseParam, parseQuery } from "../lib/validation";
+import {
+  addLeadNoteSchema,
+  changeLeadStageSchema,
+  createLeadSchema,
+  entityIdSchema,
+  leadListQuerySchema,
+  linkLeadPropertySchema,
+  updateLeadSchema,
+} from "../validation/schemas";
 
 type Profile = typeof schema.profiles.$inferSelect;
 type Lead = typeof schema.leads.$inferSelect;
@@ -33,10 +41,13 @@ async function isActiveAgencyProfile(agencyId: string, profileId: string): Promi
 
 export const leads = new Hono()
   .get("/", requireTenant, async (c) => {
+    const queryResult = parseQuery(c, leadListQuerySchema);
+    if (!queryResult.success) return queryResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const { stage, source, q, page, pageSize, all } = c.req.query();
+    const { stage, source, q, page, pageSize, all } = queryResult.data;
 
     let rows = await db
       .select()
@@ -62,8 +73,8 @@ export const leads = new Hono()
       return c.json({ leads: rows.slice(0, 500), total, page: 1, pageSize: total }, 200);
     }
 
-    const currentPage = Math.max(1, Number(page) || 1);
-    const size = Math.min(100, Math.max(1, Number(pageSize) || 30));
+    const currentPage = page ?? 1;
+    const size = Math.min(100, pageSize ?? 30);
     const paged = rows.slice((currentPage - 1) * size, (currentPage - 1) * size + size);
     return c.json({ leads: paged, total, page: currentPage, pageSize: size }, 200);
   })
@@ -83,23 +94,23 @@ export const leads = new Hono()
     const closed = rows.filter((lead) => lead.stage === "closed").length;
     const total = rows.length;
 
-    return c.json(
-      {
-        stats: {
-          totalLeads: total,
-          closedLeads: closed,
-          conversionRate: total > 0 ? Math.round((closed / total) * 100) : 0,
-          stageBreakdown,
-        },
+    return c.json({
+      stats: {
+        totalLeads: total,
+        closedLeads: closed,
+        conversionRate: total > 0 ? Math.round((closed / total) * 100) : 0,
+        stageBreakdown,
       },
-      200,
-    );
+    }, 200);
   })
   .post("/", requireTenant, async (c) => {
+    const bodyResult = await parseJson(c, createLeadSchema);
+    if (!bodyResult.success) return bodyResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const body = await c.req.json();
+    const body = bodyResult.data;
 
     const assignedTo = profile.role === "agent" ? user.id : (body.assignedTo ?? user.id);
     if (!(await isActiveAgencyProfile(agencyId, assignedTo))) {
@@ -107,27 +118,24 @@ export const leads = new Hono()
     }
 
     const id = nanoid();
-    const [lead] = await db
-      .insert(schema.leads)
-      .values({
-        id,
-        agencyId,
-        assignedTo,
-        name: body.name,
-        nameAr: body.nameAr,
-        phone: body.phone,
-        email: body.email,
-        source: body.source ?? "manual",
-        stage: "new",
-        budgetMin: body.budgetMin,
-        budgetMax: body.budgetMax,
-        currency: body.currency ?? "USD",
-        propertyType: body.propertyType,
-        bedrooms: body.bedrooms,
-        preferredArea: body.preferredArea,
-        notes: body.notes,
-      })
-      .returning();
+    const [lead] = await db.insert(schema.leads).values({
+      id,
+      agencyId,
+      assignedTo,
+      name: body.name,
+      nameAr: body.nameAr,
+      phone: body.phone,
+      email: body.email,
+      source: body.source ?? "manual",
+      stage: "new",
+      budgetMin: body.budgetMin,
+      budgetMax: body.budgetMax,
+      currency: body.currency ?? "USD",
+      propertyType: body.propertyType,
+      bedrooms: body.bedrooms,
+      preferredArea: body.preferredArea,
+      notes: body.notes,
+    }).returning();
 
     await db.insert(schema.activities).values({
       id: nanoid(),
@@ -138,32 +146,38 @@ export const leads = new Hono()
       body: "Lead created",
       meta: JSON.stringify({ stage: "new" }),
     });
-
     return c.json({ lead }, 201);
   })
   .get("/:id", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const lead = await findLead(agencyId, c.req.param("id"));
-
+    const lead = await findLead(agencyId, idResult.data);
     if (!lead || !canAccessLead(profile, user.id, lead)) {
       return c.json({ error: "Not found" }, 404);
     }
     return c.json({ lead }, 200);
   })
   .patch("/:id", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+    const bodyResult = await parseJson(c, updateLeadSchema);
+    if (!bodyResult.success) return bodyResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
+    const body = bodyResult.data;
     const existing = await findLead(agencyId, leadId);
 
     if (!existing || !canAccessLead(profile, user.id, existing)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    const body = await c.req.json();
     let assignedTo = existing.assignedTo;
     if (body.assignedTo !== undefined) {
       if (profile.role === "agent" && body.assignedTo !== user.id) {
@@ -175,177 +189,155 @@ export const leads = new Hono()
       assignedTo = body.assignedTo;
     }
 
-    const [lead] = await db
-      .update(schema.leads)
-      .set({
-        assignedTo,
-        name: body.name,
-        nameAr: body.nameAr,
-        phone: body.phone,
-        email: body.email,
-        source: body.source,
-        budgetMin: body.budgetMin,
-        budgetMax: body.budgetMax,
-        currency: body.currency,
-        propertyType: body.propertyType,
-        bedrooms: body.bedrooms,
-        preferredArea: body.preferredArea,
-        notes: body.notes,
-        updatedAt: Date.now(),
-      })
-      .where(and(eq(schema.leads.id, leadId), eq(schema.leads.agencyId, agencyId)))
-      .returning();
-
+    const [lead] = await db.update(schema.leads).set({
+      assignedTo,
+      name: body.name,
+      nameAr: body.nameAr,
+      phone: body.phone,
+      email: body.email,
+      source: body.source,
+      budgetMin: body.budgetMin,
+      budgetMax: body.budgetMax,
+      currency: body.currency,
+      propertyType: body.propertyType,
+      bedrooms: body.bedrooms,
+      preferredArea: body.preferredArea,
+      notes: body.notes,
+      updatedAt: Date.now(),
+    }).where(and(eq(schema.leads.id, leadId), eq(schema.leads.agencyId, agencyId))).returning();
     return c.json({ lead }, 200);
   })
   .delete("/:id", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
     const existing = await findLead(agencyId, leadId);
-
     if (!existing || !canAccessLead(profile, user.id, existing)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    await db
-      .delete(schema.leads)
-      .where(and(eq(schema.leads.id, leadId), eq(schema.leads.agencyId, agencyId)));
+    await db.delete(schema.leads).where(
+      and(eq(schema.leads.id, leadId), eq(schema.leads.agencyId, agencyId)),
+    );
     return c.json({ ok: true }, 200);
   })
   .patch("/:id/stage", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+    const bodyResult = await parseJson(c, changeLeadStageSchema);
+    if (!bodyResult.success) return bodyResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
     const existing = await findLead(agencyId, leadId);
-
     if (!existing || !canAccessLead(profile, user.id, existing)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    const { stage } = await c.req.json();
-    if (!LEAD_STAGES.has(stage)) return c.json({ error: "Invalid stage" }, 400);
-
-    const [lead] = await db
-      .update(schema.leads)
+    const { stage } = bodyResult.data;
+    const [lead] = await db.update(schema.leads)
       .set({ stage, updatedAt: Date.now() })
       .where(and(eq(schema.leads.id, leadId), eq(schema.leads.agencyId, agencyId)))
       .returning();
 
     await db.insert(schema.activities).values({
-      id: nanoid(),
-      agencyId,
-      leadId,
-      userId: user.id,
-      type: "stage_change",
-      body: `Stage changed to ${stage}`,
+      id: nanoid(), agencyId, leadId, userId: user.id,
+      type: "stage_change", body: `Stage changed to ${stage}`,
       meta: JSON.stringify({ stage }),
     });
-
     return c.json({ lead }, 200);
   })
   .post("/:id/notes", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+    const bodyResult = await parseJson(c, addLeadNoteSchema);
+    if (!bodyResult.success) return bodyResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
     const lead = await findLead(agencyId, leadId);
-
     if (!lead || !canAccessLead(profile, user.id, lead)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    const { body: noteBody } = await c.req.json();
-    if (typeof noteBody !== "string" || !noteBody.trim()) {
-      return c.json({ error: "Note body required" }, 400);
-    }
-
     await db.insert(schema.activities).values({
-      id: nanoid(),
-      agencyId,
-      leadId,
-      userId: user.id,
-      type: "note",
-      body: noteBody.trim(),
+      id: nanoid(), agencyId, leadId, userId: user.id,
+      type: "note", body: bodyResult.data.body,
     });
     return c.json({ ok: true }, 201);
   })
   .get("/:id/activities", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
     const lead = await findLead(agencyId, leadId);
-
     if (!lead || !canAccessLead(profile, user.id, lead)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    const activities = await db
-      .select()
-      .from(schema.activities)
+    const activities = await db.select().from(schema.activities)
       .where(and(eq(schema.activities.leadId, leadId), eq(schema.activities.agencyId, agencyId)))
       .orderBy(desc(schema.activities.createdAt));
     return c.json({ activities }, 200);
   })
   .get("/:id/properties", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
     const lead = await findLead(agencyId, leadId);
-
     if (!lead || !canAccessLead(profile, user.id, lead)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    const links = await db
-      .select()
-      .from(schema.leadProperties)
+    const links = await db.select().from(schema.leadProperties)
       .where(eq(schema.leadProperties.leadId, leadId));
     const propertyIds = links.flatMap((link) => (link.propertyId ? [link.propertyId] : []));
-    const properties = await Promise.all(
-      propertyIds.map((propertyId) =>
-        db
-          .select()
-          .from(schema.properties)
-          .where(and(eq(schema.properties.id, propertyId), eq(schema.properties.agencyId, agencyId)))
-          .get(),
-      ),
-    );
-
+    const properties = await Promise.all(propertyIds.map((propertyId) =>
+      db.select().from(schema.properties)
+        .where(and(eq(schema.properties.id, propertyId), eq(schema.properties.agencyId, agencyId)))
+        .get(),
+    ));
     return c.json({ properties: properties.filter(Boolean), links }, 200);
   })
   .post("/:id/properties", requireTenant, async (c) => {
+    const idResult = parseParam(c, entityIdSchema);
+    if (!idResult.success) return idResult.response;
+    const bodyResult = await parseJson(c, linkLeadPropertySchema);
+    if (!bodyResult.success) return bodyResult.response;
+
     const user = c.get("user")!;
     const profile = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const leadId = c.req.param("id");
+    const leadId = idResult.data;
     const lead = await findLead(agencyId, leadId);
-
     if (!lead || !canAccessLead(profile, user.id, lead)) {
       return c.json({ error: "Not found" }, 404);
     }
 
-    const { propertyId, status, notes } = await c.req.json();
-    const property = await db
-      .select()
-      .from(schema.properties)
+    const { propertyId, status, notes } = bodyResult.data;
+    const property = await db.select().from(schema.properties)
       .where(and(eq(schema.properties.id, propertyId), eq(schema.properties.agencyId, agencyId)))
       .get();
     if (!property) return c.json({ error: "Property not found" }, 404);
 
-    const [link] = await db
-      .insert(schema.leadProperties)
-      .values({
-        id: nanoid(),
-        leadId,
-        propertyId,
-        status: status ?? "shown",
-        notes,
-      })
-      .returning();
+    const [link] = await db.insert(schema.leadProperties).values({
+      id: nanoid(), leadId, propertyId, status: status ?? "shown", notes,
+    }).returning();
     return c.json({ link }, 201);
   });
