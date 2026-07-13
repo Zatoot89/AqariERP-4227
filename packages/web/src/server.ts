@@ -2,6 +2,9 @@ import { assertRuntimeConfig } from "./api/lib/runtime-config";
 
 assertRuntimeConfig();
 
+const { runApplicationMigrations } = await import("./api/database/migrations");
+await runApplicationMigrations();
+
 const [{ default: app }, { startTaskReminderLoop }] = await Promise.all([
   import("./api"),
   import("./services/task-reminders"),
