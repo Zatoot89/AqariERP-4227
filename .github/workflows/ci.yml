@@ -11,6 +11,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Permanent read-only quality gate.
 permissions:
   contents: write
 
