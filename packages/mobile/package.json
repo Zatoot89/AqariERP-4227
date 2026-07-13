@@ -1,6 +1,7 @@
 {
-  "name": "@template/mobile",
+  "name": "@aqari/mobile",
   "version": "1.0.0",
+  "private": true,
   "main": "expo-router/entry",
   "scripts": {
     "dev": "expo start",
@@ -11,9 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.96.1",
-    "@template/web": "workspace:*",
+    "@aqari/web": "workspace:*",
     "@expo/vector-icons": "^14.0.0",
+    "@tanstack/react-query": "^5.96.1",
     "expo": "~54.0.33",
     "expo-constants": "~18.0.13",
     "expo-linking": "~8.0.11",
@@ -30,6 +31,5 @@
   "devDependencies": {
     "@types/react": "19.1.17",
     "typescript": "~5.9.2"
-  },
-  "private": true
+  }
 }

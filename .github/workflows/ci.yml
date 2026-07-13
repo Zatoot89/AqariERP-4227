@@ -35,6 +35,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify product identity
+        shell: bash
+        run: |
+          if grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
+            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=release \
+            --exclude='ci.yml' .; then
+            echo 'Legacy template identity remains.' >&2
+            exit 1
+          fi
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
