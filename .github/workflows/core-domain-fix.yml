@@ -1,0 +1,41 @@
+name: Core domain source sync
+
+on:
+  push:
+    branches:
+      - agent/core-real-estate-domain
+
+permissions:
+  contents: write
+
+concurrency:
+  group: core-domain-source-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/core-real-estate-domain
+      - name: Apply exact source correction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('packages/web/src/api/routes/inventory.ts')
+          text = path.read_text()
+          text = text.replace('  inArray,\n', '')
+          path.write_text(text)
+          PY
+      - name: Publish correction branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/web/src/api/routes/inventory.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "remove unused inventory import"
+            git push --force origin HEAD:bot/core-domain-source-fix
+          fi
