@@ -4,7 +4,6 @@ import {
   count,
   desc,
   eq,
-  inArray,
   isNotNull,
   isNull,
   like,
@@ -39,85 +38,6 @@ import {
 } from "../validation/core-domain";
 import { entityIdSchema } from "../validation/schemas";
 
-async function findInventoryProperty(agencyId: string, id: string) {
-  return db.select().from(inventoryProperties).where(and(
-    eq(inventoryProperties.id, id),
-    eq(inventoryProperties.agencyId, agencyId),
-    isNull(inventoryProperties.deletedAt),
-  )).get();
-}
-
-async function findUnit(agencyId: string, id: string) {
-  return db.select().from(units).where(and(
-    eq(units.id, id),
-    eq(units.agencyId, agencyId),
-    isNull(units.deletedAt),
-  )).get();
-}
-
-async function isAgencyProfile(agencyId: string, id: string | null | undefined) {
-  if (!id) return true;
-  return Boolean(await db.select({ id: profiles.id }).from(profiles).where(and(
-    eq(profiles.id, id),
-    eq(profiles.agencyId, agencyId),
-    eq(profiles.active, 1),
-  )).get());
-}
-
-async function isAgencyDevelopment(agencyId: string, id: string | null | undefined) {
-  if (!id) return true;
-  return Boolean(await db.select({ id: developments.id }).from(developments).where(and(
-    eq(developments.id, id),
-    eq(developments.agencyId, agencyId),
-    isNull(developments.deletedAt),
-  )).get());
-}
-
-async function isAgencyContact(agencyId: string, id: string) {
-  return Boolean(await db.select({ id: contacts.id }).from(contacts).where(and(
-    eq(contacts.id, id),
-    eq(contacts.agencyId, agencyId),
-    isNull(contacts.deletedAt),
-  )).get());
-}
-
-function stringify(value: Record<string, unknown> | string[] | undefined) {
-  return value === undefined ? undefined : JSON.stringify(value);
-}
-
-async function setAvailability(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  options: {
-    agencyId: string;
-    propertyId?: string;
-    unitId?: string;
-    status: string;
-    changedBy: string;
-    reason?: string | null;
-    now: number;
-  },
-) {
-  const targetCondition = options.propertyId
-    ? eq(availabilityHistory.propertyId, options.propertyId)
-    : eq(availabilityHistory.unitId, options.unitId!);
-  await tx.update(availabilityHistory).set({ effectiveTo: options.now }).where(and(
-    eq(availabilityHistory.agencyId, options.agencyId),
-    targetCondition,
-    isNull(availabilityHistory.effectiveTo),
-  ));
-  await tx.insert(availabilityHistory).values({
-    id: nanoid(),
-    agencyId: options.agencyId,
-    propertyId: options.propertyId,
-    unitId: options.unitId,
-    status: options.status,
-    effectiveFrom: options.now,
-    reason: options.reason,
-    changedBy: options.changedBy,
-    createdAt: options.now,
-  });
-}
-
 const listingSchema = z.object({
   principalContactId: entityIdSchema,
   propertyId: entityIdSchema.optional(),
@@ -132,10 +52,18 @@ const listingSchema = z.object({
   notes: z.string().trim().max(5000).nullable().optional(),
 }).strict().superRefine((value, ctx) => {
   if (Boolean(value.propertyId) === Boolean(value.unitId)) {
-    ctx.addIssue({ code: "custom", path: ["propertyId"], message: "Target exactly one property or unit" });
+    ctx.addIssue({
+      code: "custom",
+      path: ["propertyId"],
+      message: "Target exactly one property or unit",
+    });
   }
   if (value.endsAt != null && value.endsAt < value.startsAt) {
-    ctx.addIssue({ code: "custom", path: ["endsAt"], message: "endsAt must follow startsAt" });
+    ctx.addIssue({
+      code: "custom",
+      path: ["endsAt"],
+      message: "endsAt must follow startsAt",
+    });
   }
 });
 
@@ -156,22 +84,71 @@ const updateListingStatusSchema = z.object({
   endsAt: z.number().int().nonnegative().nullable().optional(),
 }).strict();
 
+function jsonString(value: unknown): string | undefined {
+  return value === undefined ? undefined : JSON.stringify(value);
+}
+
+async function findProperty(agencyId: string, id: string) {
+  return db.select().from(inventoryProperties).where(and(
+    eq(inventoryProperties.id, id),
+    eq(inventoryProperties.agencyId, agencyId),
+    isNull(inventoryProperties.deletedAt),
+  )).get();
+}
+
+async function findUnit(agencyId: string, id: string) {
+  return db.select().from(units).where(and(
+    eq(units.id, id),
+    eq(units.agencyId, agencyId),
+    isNull(units.deletedAt),
+  )).get();
+}
+
+async function hasProfile(agencyId: string, id: string | null | undefined) {
+  if (!id) return true;
+  return Boolean(await db.select({ id: profiles.id }).from(profiles).where(and(
+    eq(profiles.id, id),
+    eq(profiles.agencyId, agencyId),
+    eq(profiles.active, 1),
+  )).get());
+}
+
+async function hasDevelopment(agencyId: string, id: string | null | undefined) {
+  if (!id) return true;
+  return Boolean(await db.select({ id: developments.id }).from(developments).where(and(
+    eq(developments.id, id),
+    eq(developments.agencyId, agencyId),
+    isNull(developments.deletedAt),
+  )).get());
+}
+
+async function hasContact(agencyId: string, id: string) {
+  return Boolean(await db.select({ id: contacts.id }).from(contacts).where(and(
+    eq(contacts.id, id),
+    eq(contacts.agencyId, agencyId),
+    isNull(contacts.deletedAt),
+  )).get());
+}
+
 export const inventory = new Hono()
   .get("/properties", requireTenant, async (c) => {
-    const queryResult = parseQuery(c, inventoryPropertyListQuerySchema);
-    if (!queryResult.success) return queryResult.response;
+    const parsed = parseQuery(c, inventoryPropertyListQuerySchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
-    const { q, status, propertyType, purpose, developmentId, page, pageSize } = queryResult.data;
     const conditions: SQL[] = [
       eq(inventoryProperties.agencyId, agencyId),
       isNull(inventoryProperties.deletedAt),
     ];
-    if (status) conditions.push(eq(inventoryProperties.status, status));
-    if (propertyType) conditions.push(eq(inventoryProperties.propertyType, propertyType));
-    if (purpose) conditions.push(eq(inventoryProperties.purpose, purpose));
-    if (developmentId) conditions.push(eq(inventoryProperties.developmentId, developmentId));
-    if (q) {
-      const pattern = `%${q}%`;
+    if (parsed.data.status) conditions.push(eq(inventoryProperties.status, parsed.data.status));
+    if (parsed.data.propertyType) {
+      conditions.push(eq(inventoryProperties.propertyType, parsed.data.propertyType));
+    }
+    if (parsed.data.purpose) conditions.push(eq(inventoryProperties.purpose, parsed.data.purpose));
+    if (parsed.data.developmentId) {
+      conditions.push(eq(inventoryProperties.developmentId, parsed.data.developmentId));
+    }
+    if (parsed.data.q) {
+      const pattern = `%${parsed.data.q}%`;
       conditions.push(or(
         like(inventoryProperties.title, pattern),
         like(inventoryProperties.titleAr, pattern),
@@ -183,20 +160,25 @@ export const inventory = new Hono()
     const [summary] = await db.select({ total: count() }).from(inventoryProperties).where(where);
     const rows = await db.select().from(inventoryProperties).where(where)
       .orderBy(desc(inventoryProperties.createdAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
-    return c.json({ properties: rows, total: summary?.total ?? 0, page, pageSize }, 200);
+      .limit(parsed.data.pageSize)
+      .offset((parsed.data.page - 1) * parsed.data.pageSize);
+    return c.json({
+      properties: rows,
+      total: summary?.total ?? 0,
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+    }, 200);
   })
   .post("/properties", requireTenant, async (c) => {
-    const bodyResult = await parseJson(c, createInventoryPropertySchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const parsed = await parseJson(c, createInventoryPropertySchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const user = c.get("user")!;
-    const body = bodyResult.data;
-    if (!(await isAgencyDevelopment(agencyId, body.developmentId))) {
+    const body = parsed.data;
+    if (!(await hasDevelopment(agencyId, body.developmentId))) {
       return c.json({ error: "Development not found" }, 404);
     }
-    if (!(await isAgencyProfile(agencyId, body.assignedAgentId))) {
+    if (!(await hasProfile(agencyId, body.assignedAgentId))) {
       return c.json({ error: "Assigned agent not found" }, 404);
     }
     const id = nanoid();
@@ -224,18 +206,20 @@ export const inventory = new Hono()
         annualRentAskingPrice: body.annualRentAskingPrice,
         currency: body.currency ?? "USD",
         assignedAgentId: body.assignedAgentId,
-        customFields: stringify(body.customFields),
+        customFields: jsonString(body.customFields),
         createdBy: user.id,
         createdAt: now,
         updatedAt: now,
       }).returning();
-      await setAvailability(tx, {
+      await tx.insert(availabilityHistory).values({
+        id: nanoid(),
         agencyId,
         propertyId: id,
         status: created.status,
-        changedBy: user.id,
+        effectiveFrom: now,
         reason: "Property created",
-        now,
+        changedBy: user.id,
+        createdAt: now,
       });
       await tx.insert(auditLogs).values(auditRecord(c, {
         agencyId,
@@ -249,12 +233,12 @@ export const inventory = new Hono()
     return c.json({ property }, 201);
   })
   .get("/properties/:id", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
     const agencyId = c.get("agencyId") as string;
-    const property = await findInventoryProperty(agencyId, idResult.data);
+    const property = await findProperty(agencyId, id.data);
     if (!property) return c.json({ error: "Not found" }, 404);
-    const [unitRows, ownershipRows, listingRows, history] = await Promise.all([
+    const [unitRows, owners, listings, history] = await Promise.all([
       db.select().from(units).where(and(
         eq(units.agencyId, agencyId),
         eq(units.propertyId, property.id),
@@ -280,67 +264,55 @@ export const inventory = new Hono()
         ...property,
         customFields: property.customFields ? JSON.parse(property.customFields) : {},
         units: unitRows,
-        ownership: ownershipRows,
-        listings: listingRows,
+        ownership: owners,
+        listings,
         availabilityHistory: history,
       },
     }, 200);
   })
   .patch("/properties/:id", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
-    const bodyResult = await parseJson(c, updateInventoryPropertySchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
+    const parsed = await parseJson(c, updateInventoryPropertySchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const user = c.get("user")!;
-    const existing = await findInventoryProperty(agencyId, idResult.data);
+    const existing = await findProperty(agencyId, id.data);
     if (!existing) return c.json({ error: "Not found" }, 404);
-    const body = bodyResult.data as Partial<typeof existing> & {
-      customFields?: Record<string, unknown>;
-    };
-    if (body.developmentId !== undefined && !(await isAgencyDevelopment(agencyId, body.developmentId))) {
+    if (parsed.data.developmentId !== undefined &&
+      !(await hasDevelopment(agencyId, parsed.data.developmentId))) {
       return c.json({ error: "Development not found" }, 404);
     }
-    if (body.assignedAgentId !== undefined && !(await isAgencyProfile(agencyId, body.assignedAgentId))) {
+    if (parsed.data.assignedAgentId !== undefined &&
+      !(await hasProfile(agencyId, parsed.data.assignedAgentId))) {
       return c.json({ error: "Assigned agent not found" }, 404);
     }
     const now = Date.now();
     const property = await db.transaction(async (tx) => {
       const [updated] = await tx.update(inventoryProperties).set({
-        developmentId: body.developmentId,
-        assetCode: body.assetCode,
-        title: body.title,
-        titleAr: body.titleAr,
-        propertyType: body.propertyType,
-        purpose: body.purpose,
-        status: body.status,
-        description: body.description,
-        descriptionAr: body.descriptionAr,
-        addressLine1: body.addressLine1,
-        city: body.city,
-        region: body.region,
-        country: body.country,
-        landAreaSqm: body.landAreaSqm,
-        builtAreaSqm: body.builtAreaSqm,
-        saleAskingPrice: body.saleAskingPrice,
-        annualRentAskingPrice: body.annualRentAskingPrice,
-        currency: body.currency,
-        assignedAgentId: body.assignedAgentId,
-        customFields: stringify(body.customFields),
+        ...parsed.data,
+        customFields: jsonString(parsed.data.customFields),
         updatedAt: now,
       }).where(and(
         eq(inventoryProperties.id, existing.id),
         eq(inventoryProperties.agencyId, agencyId),
         isNull(inventoryProperties.deletedAt),
       )).returning();
-      if (body.status && body.status !== existing.status) {
-        await setAvailability(tx, {
+      if (parsed.data.status && parsed.data.status !== existing.status) {
+        await tx.update(availabilityHistory).set({ effectiveTo: now }).where(and(
+          eq(availabilityHistory.agencyId, agencyId),
+          eq(availabilityHistory.propertyId, existing.id),
+          isNull(availabilityHistory.effectiveTo),
+        ));
+        await tx.insert(availabilityHistory).values({
+          id: nanoid(),
           agencyId,
           propertyId: existing.id,
-          status: body.status,
-          changedBy: user.id,
+          status: parsed.data.status,
+          effectiveFrom: now,
           reason: "Property status updated",
-          now,
+          changedBy: user.id,
+          createdAt: now,
         });
       }
       await tx.insert(auditLogs).values(auditRecord(c, {
@@ -348,17 +320,17 @@ export const inventory = new Hono()
         action: "inventory_property.updated",
         entityType: "inventory_property",
         entityId: existing.id,
-        metadata: { changedFields: Object.keys(bodyResult.data) },
+        metadata: { changedFields: Object.keys(parsed.data) },
       }));
       return updated;
     });
     return c.json({ property }, 200);
   })
   .delete("/properties/:id", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
     const agencyId = c.get("agencyId") as string;
-    const existing = await findInventoryProperty(agencyId, idResult.data);
+    const existing = await findProperty(agencyId, id.data);
     if (!existing) return c.json({ error: "Not found" }, 404);
     const now = Date.now();
     await db.transaction(async (tx) => {
@@ -386,69 +358,70 @@ export const inventory = new Hono()
     return c.json({ ok: true }, 200);
   })
   .get("/properties/:id/units", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
     const agencyId = c.get("agencyId") as string;
-    if (!(await findInventoryProperty(agencyId, idResult.data))) {
+    if (!(await findProperty(agencyId, id.data))) {
       return c.json({ error: "Property not found" }, 404);
     }
     const rows = await db.select().from(units).where(and(
       eq(units.agencyId, agencyId),
-      eq(units.propertyId, idResult.data),
+      eq(units.propertyId, id.data),
       isNull(units.deletedAt),
     )).orderBy(units.unitNumber);
     return c.json({ units: rows }, 200);
   })
   .post("/properties/:id/units", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
-    const bodyResult = await parseJson(c, createUnitSchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
+    const parsed = await parseJson(c, createUnitSchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const user = c.get("user")!;
-    const property = await findInventoryProperty(agencyId, idResult.data);
+    const property = await findProperty(agencyId, id.data);
     if (!property) return c.json({ error: "Property not found" }, 404);
-    const body = bodyResult.data;
-    const id = nanoid();
+    const unitId = nanoid();
     const now = Date.now();
     const unit = await db.transaction(async (tx) => {
       const [created] = await tx.insert(units).values({
-        id,
+        id: unitId,
         agencyId,
         propertyId: property.id,
-        unitNumber: body.unitNumber,
-        floor: body.floor,
-        unitType: body.unitType,
-        purpose: body.purpose ?? "both",
-        status: body.status ?? "available",
-        bedrooms: body.bedrooms,
-        bathrooms: body.bathrooms,
-        areaSqm: body.areaSqm,
-        balconyAreaSqm: body.balconyAreaSqm,
-        parkingSpaces: body.parkingSpaces ?? 0,
-        furnishing: body.furnishing ?? "unfurnished",
-        saleAskingPrice: body.saleAskingPrice,
-        annualRentAskingPrice: body.annualRentAskingPrice,
-        currency: body.currency ?? property.currency,
-        amenities: stringify(body.amenities),
-        customFields: stringify(body.customFields),
+        unitNumber: parsed.data.unitNumber,
+        floor: parsed.data.floor,
+        unitType: parsed.data.unitType,
+        purpose: parsed.data.purpose ?? "both",
+        status: parsed.data.status ?? "available",
+        bedrooms: parsed.data.bedrooms,
+        bathrooms: parsed.data.bathrooms,
+        areaSqm: parsed.data.areaSqm,
+        balconyAreaSqm: parsed.data.balconyAreaSqm,
+        parkingSpaces: parsed.data.parkingSpaces ?? 0,
+        furnishing: parsed.data.furnishing ?? "unfurnished",
+        saleAskingPrice: parsed.data.saleAskingPrice,
+        annualRentAskingPrice: parsed.data.annualRentAskingPrice,
+        currency: parsed.data.currency ?? property.currency,
+        amenities: jsonString(parsed.data.amenities),
+        customFields: jsonString(parsed.data.customFields),
         createdBy: user.id,
         createdAt: now,
         updatedAt: now,
       }).returning();
-      await setAvailability(tx, {
+      await tx.insert(availabilityHistory).values({
+        id: nanoid(),
         agencyId,
-        unitId: id,
+        unitId,
         status: created.status,
-        changedBy: user.id,
+        effectiveFrom: now,
         reason: "Unit created",
-        now,
+        changedBy: user.id,
+        createdAt: now,
       });
       await tx.insert(auditLogs).values(auditRecord(c, {
         agencyId,
         action: "unit.created",
         entityType: "unit",
-        entityId: id,
+        entityId: unitId,
         metadata: { propertyId: property.id, status: created.status },
       }));
       return created;
@@ -456,12 +429,12 @@ export const inventory = new Hono()
     return c.json({ unit }, 201);
   })
   .get("/units/:id", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
     const agencyId = c.get("agencyId") as string;
-    const unit = await findUnit(agencyId, idResult.data);
+    const unit = await findUnit(agencyId, id.data);
     if (!unit) return c.json({ error: "Not found" }, 404);
-    const [ownership, listings, history] = await Promise.all([
+    const [owners, listings, history] = await Promise.all([
       db.select().from(ownershipInterests).where(and(
         eq(ownershipInterests.agencyId, agencyId),
         eq(ownershipInterests.unitId, unit.id),
@@ -477,54 +450,44 @@ export const inventory = new Hono()
         eq(availabilityHistory.unitId, unit.id),
       )).orderBy(desc(availabilityHistory.effectiveFrom)),
     ]);
-    return c.json({ unit: { ...unit, ownership, listings, availabilityHistory: history } }, 200);
+    return c.json({ unit: { ...unit, ownership: owners, listings, availabilityHistory: history } }, 200);
   })
   .patch("/units/:id", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
-    const bodyResult = await parseJson(c, updateUnitSchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
+    const parsed = await parseJson(c, updateUnitSchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const user = c.get("user")!;
-    const existing = await findUnit(agencyId, idResult.data);
+    const existing = await findUnit(agencyId, id.data);
     if (!existing) return c.json({ error: "Not found" }, 404);
-    const body = bodyResult.data as Partial<typeof existing> & {
-      amenities?: string[];
-      customFields?: Record<string, unknown>;
-    };
     const now = Date.now();
     const unit = await db.transaction(async (tx) => {
       const [updated] = await tx.update(units).set({
-        unitNumber: body.unitNumber,
-        floor: body.floor,
-        unitType: body.unitType,
-        purpose: body.purpose,
-        status: body.status,
-        bedrooms: body.bedrooms,
-        bathrooms: body.bathrooms,
-        areaSqm: body.areaSqm,
-        balconyAreaSqm: body.balconyAreaSqm,
-        parkingSpaces: body.parkingSpaces,
-        furnishing: body.furnishing,
-        saleAskingPrice: body.saleAskingPrice,
-        annualRentAskingPrice: body.annualRentAskingPrice,
-        currency: body.currency,
-        amenities: stringify(body.amenities),
-        customFields: stringify(body.customFields),
+        ...parsed.data,
+        amenities: jsonString(parsed.data.amenities),
+        customFields: jsonString(parsed.data.customFields),
         updatedAt: now,
       }).where(and(
         eq(units.id, existing.id),
         eq(units.agencyId, agencyId),
         isNull(units.deletedAt),
       )).returning();
-      if (body.status && body.status !== existing.status) {
-        await setAvailability(tx, {
+      if (parsed.data.status && parsed.data.status !== existing.status) {
+        await tx.update(availabilityHistory).set({ effectiveTo: now }).where(and(
+          eq(availabilityHistory.agencyId, agencyId),
+          eq(availabilityHistory.unitId, existing.id),
+          isNull(availabilityHistory.effectiveTo),
+        ));
+        await tx.insert(availabilityHistory).values({
+          id: nanoid(),
           agencyId,
           unitId: existing.id,
-          status: body.status,
-          changedBy: user.id,
+          status: parsed.data.status,
+          effectiveFrom: now,
           reason: "Unit status updated",
-          now,
+          changedBy: user.id,
+          createdAt: now,
         });
       }
       await tx.insert(auditLogs).values(auditRecord(c, {
@@ -532,17 +495,17 @@ export const inventory = new Hono()
         action: "unit.updated",
         entityType: "unit",
         entityId: existing.id,
-        metadata: { changedFields: Object.keys(bodyResult.data) },
+        metadata: { changedFields: Object.keys(parsed.data) },
       }));
       return updated;
     });
     return c.json({ unit }, 200);
   })
   .delete("/units/:id", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
     const agencyId = c.get("agencyId") as string;
-    const existing = await findUnit(agencyId, idResult.data);
+    const existing = await findUnit(agencyId, id.data);
     if (!existing) return c.json({ error: "Not found" }, 404);
     const now = Date.now();
     await db.transaction(async (tx) => {
@@ -566,55 +529,55 @@ export const inventory = new Hono()
     return c.json({ ok: true }, 200);
   })
   .get("/ownership", requireTenant, async (c) => {
-    const queryResult = parseQuery(c, ownershipListQuerySchema);
-    if (!queryResult.success) return queryResult.response;
+    const parsed = parseQuery(c, ownershipListQuerySchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
-    const { propertyId, unitId, contactId, active } = queryResult.data;
     const conditions: SQL[] = [
       eq(ownershipInterests.agencyId, agencyId),
       isNull(ownershipInterests.deletedAt),
     ];
-    if (propertyId) conditions.push(eq(ownershipInterests.propertyId, propertyId));
-    if (unitId) conditions.push(eq(ownershipInterests.unitId, unitId));
-    if (contactId) conditions.push(eq(ownershipInterests.ownerContactId, contactId));
-    if (active === "true") conditions.push(isNull(ownershipInterests.effectiveTo));
-    if (active === "false") conditions.push(isNotNull(ownershipInterests.effectiveTo));
+    if (parsed.data.propertyId) {
+      conditions.push(eq(ownershipInterests.propertyId, parsed.data.propertyId));
+    }
+    if (parsed.data.unitId) conditions.push(eq(ownershipInterests.unitId, parsed.data.unitId));
+    if (parsed.data.contactId) {
+      conditions.push(eq(ownershipInterests.ownerContactId, parsed.data.contactId));
+    }
+    if (parsed.data.active === "true") conditions.push(isNull(ownershipInterests.effectiveTo));
+    if (parsed.data.active === "false") conditions.push(isNotNull(ownershipInterests.effectiveTo));
     const rows = await db.select().from(ownershipInterests).where(and(...conditions))
       .orderBy(desc(ownershipInterests.effectiveFrom));
     return c.json({ ownership: rows }, 200);
   })
   .post("/ownership", requireTenant, async (c) => {
-    const bodyResult = await parseJson(c, createOwnershipSchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const parsed = await parseJson(c, createOwnershipSchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const user = c.get("user")!;
-    const body = bodyResult.data;
-    if (!(await isAgencyContact(agencyId, body.ownerContactId))) {
+    const body = parsed.data;
+    if (!(await hasContact(agencyId, body.ownerContactId))) {
       return c.json({ error: "Owner contact not found" }, 404);
     }
-    if (body.propertyId && !(await findInventoryProperty(agencyId, body.propertyId))) {
+    if (body.propertyId && !(await findProperty(agencyId, body.propertyId))) {
       return c.json({ error: "Property not found" }, 404);
     }
     if (body.unitId && !(await findUnit(agencyId, body.unitId))) {
       return c.json({ error: "Unit not found" }, 404);
     }
-    const targetCondition = body.propertyId
+    const target = body.propertyId
       ? eq(ownershipInterests.propertyId, body.propertyId)
       : eq(ownershipInterests.unitId, body.unitId!);
-    const activeRows = await db.select().from(ownershipInterests).where(and(
+    const active = await db.select().from(ownershipInterests).where(and(
       eq(ownershipInterests.agencyId, agencyId),
-      targetCondition,
+      target,
       isNull(ownershipInterests.effectiveTo),
       isNull(ownershipInterests.deletedAt),
     ));
-    const activeTotal = activeRows.reduce((sum, row) => sum + row.ownershipPercentage, 0);
+    const activeTotal = active.reduce((sum, row) => sum + row.ownershipPercentage, 0);
     if (activeTotal + body.ownershipPercentage > 100.000001) {
-      return c.json({
-        error: "Active ownership would exceed 100 percent",
-        activeTotal,
-      }, 409);
+      return c.json({ error: "Active ownership would exceed 100 percent", activeTotal }, 409);
     }
-    const id = nanoid();
+    const ownershipId = nanoid();
     const now = Date.now();
     const ownership = await db.transaction(async (tx) => {
       const ownerRole = await tx.select({ id: contactRoles.id }).from(contactRoles).where(and(
@@ -635,7 +598,7 @@ export const inventory = new Hono()
         });
       }
       const [created] = await tx.insert(ownershipInterests).values({
-        id,
+        id: ownershipId,
         agencyId,
         ownerContactId: body.ownerContactId,
         propertyId: body.propertyId,
@@ -653,7 +616,7 @@ export const inventory = new Hono()
         agencyId,
         action: "ownership.created",
         entityType: "ownership_interest",
-        entityId: id,
+        entityId: ownershipId,
         metadata: {
           ownerContactId: body.ownerContactId,
           propertyId: body.propertyId,
@@ -666,25 +629,25 @@ export const inventory = new Hono()
     return c.json({ ownership }, 201);
   })
   .patch("/ownership/:id/end", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
-    const bodyResult = await parseJson(c, endOwnershipSchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
+    const parsed = await parseJson(c, endOwnershipSchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const existing = await db.select().from(ownershipInterests).where(and(
-      eq(ownershipInterests.id, idResult.data),
+      eq(ownershipInterests.id, id.data),
       eq(ownershipInterests.agencyId, agencyId),
       isNull(ownershipInterests.effectiveTo),
       isNull(ownershipInterests.deletedAt),
     )).get();
     if (!existing) return c.json({ error: "Not found" }, 404);
-    const effectiveTo = bodyResult.data.effectiveTo ?? Date.now();
+    const effectiveTo = parsed.data.effectiveTo ?? Date.now();
     if (effectiveTo < existing.effectiveFrom) {
       return c.json({ error: "End date cannot precede ownership start" }, 400);
     }
     const [ownership] = await db.update(ownershipInterests).set({
       effectiveTo,
-      notes: bodyResult.data.notes ?? existing.notes,
+      notes: parsed.data.notes ?? existing.notes,
       updatedAt: Date.now(),
     }).where(and(
       eq(ownershipInterests.id, existing.id),
@@ -700,45 +663,48 @@ export const inventory = new Hono()
     return c.json({ ownership }, 200);
   })
   .get("/listings", requireTenant, async (c) => {
-    const queryResult = parseQuery(c, listingQuerySchema);
-    if (!queryResult.success) return queryResult.response;
+    const parsed = parseQuery(c, listingQuerySchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
-    const { propertyId, unitId, contactId, status } = queryResult.data;
     const conditions: SQL[] = [
       eq(listingAgreements.agencyId, agencyId),
       isNull(listingAgreements.deletedAt),
     ];
-    if (propertyId) conditions.push(eq(listingAgreements.propertyId, propertyId));
-    if (unitId) conditions.push(eq(listingAgreements.unitId, unitId));
-    if (contactId) conditions.push(eq(listingAgreements.principalContactId, contactId));
-    if (status) conditions.push(eq(listingAgreements.status, status));
+    if (parsed.data.propertyId) {
+      conditions.push(eq(listingAgreements.propertyId, parsed.data.propertyId));
+    }
+    if (parsed.data.unitId) conditions.push(eq(listingAgreements.unitId, parsed.data.unitId));
+    if (parsed.data.contactId) {
+      conditions.push(eq(listingAgreements.principalContactId, parsed.data.contactId));
+    }
+    if (parsed.data.status) conditions.push(eq(listingAgreements.status, parsed.data.status));
     const rows = await db.select().from(listingAgreements).where(and(...conditions))
       .orderBy(desc(listingAgreements.createdAt));
     return c.json({ listings: rows }, 200);
   })
   .post("/listings", requireTenant, async (c) => {
-    const bodyResult = await parseJson(c, listingSchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const parsed = await parseJson(c, listingSchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const user = c.get("user")!;
-    const body = bodyResult.data;
-    if (!(await isAgencyContact(agencyId, body.principalContactId))) {
+    const body = parsed.data;
+    if (!(await hasContact(agencyId, body.principalContactId))) {
       return c.json({ error: "Principal contact not found" }, 404);
     }
-    if (body.propertyId && !(await findInventoryProperty(agencyId, body.propertyId))) {
+    if (body.propertyId && !(await findProperty(agencyId, body.propertyId))) {
       return c.json({ error: "Property not found" }, 404);
     }
     if (body.unitId && !(await findUnit(agencyId, body.unitId))) {
       return c.json({ error: "Unit not found" }, 404);
     }
-    if (!(await isAgencyProfile(agencyId, body.assignedAgentId))) {
+    if (!(await hasProfile(agencyId, body.assignedAgentId))) {
       return c.json({ error: "Assigned agent not found" }, 404);
     }
-    const id = nanoid();
+    const listingId = nanoid();
     const now = Date.now();
     const listing = await db.transaction(async (tx) => {
       const [created] = await tx.insert(listingAgreements).values({
-        id,
+        id: listingId,
         agencyId,
         principalContactId: body.principalContactId,
         propertyId: body.propertyId,
@@ -759,7 +725,7 @@ export const inventory = new Hono()
         agencyId,
         action: "listing_agreement.created",
         entityType: "listing_agreement",
-        entityId: id,
+        entityId: listingId,
         metadata: {
           principalContactId: body.principalContactId,
           propertyId: body.propertyId,
@@ -772,20 +738,20 @@ export const inventory = new Hono()
     return c.json({ listing }, 201);
   })
   .patch("/listings/:id/status", requireTenant, async (c) => {
-    const idResult = parseParam(c, entityIdSchema);
-    if (!idResult.success) return idResult.response;
-    const bodyResult = await parseJson(c, updateListingStatusSchema);
-    if (!bodyResult.success) return bodyResult.response;
+    const id = parseParam(c, entityIdSchema);
+    if (!id.success) return id.response;
+    const parsed = await parseJson(c, updateListingStatusSchema);
+    if (!parsed.success) return parsed.response;
     const agencyId = c.get("agencyId") as string;
     const existing = await db.select().from(listingAgreements).where(and(
-      eq(listingAgreements.id, idResult.data),
+      eq(listingAgreements.id, id.data),
       eq(listingAgreements.agencyId, agencyId),
       isNull(listingAgreements.deletedAt),
     )).get();
     if (!existing) return c.json({ error: "Not found" }, 404);
     const [listing] = await db.update(listingAgreements).set({
-      status: bodyResult.data.status,
-      endsAt: bodyResult.data.endsAt,
+      status: parsed.data.status,
+      endsAt: parsed.data.endsAt,
       updatedAt: Date.now(),
     }).where(and(
       eq(listingAgreements.id, existing.id),
@@ -796,7 +762,7 @@ export const inventory = new Hono()
       action: "listing_agreement.status_updated",
       entityType: "listing_agreement",
       entityId: existing.id,
-      metadata: { previousStatus: existing.status, nextStatus: bodyResult.data.status },
+      metadata: { previousStatus: existing.status, nextStatus: parsed.data.status },
     }));
     return c.json({ listing }, 200);
   });
