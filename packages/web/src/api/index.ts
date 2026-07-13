@@ -1,33 +1,25 @@
 import "./context";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { and, eq } from "drizzle-orm";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { auth } from "./auth";
-import { db } from "./database";
-import * as schema from "./database/schema";
-import { authMiddleware, requireTenant } from "./middleware/auth";
-import { s3 } from "./lib/s3";
+import { authMiddleware } from "./middleware/auth";
 import {
   buildAllowedOrigins,
   resolveAllowedOrigin,
-  sanitizeUploadFilename,
 } from "./lib/security";
-import { parseJson } from "./lib/validation";
-import { uploadRequestSchema } from "./validation/schemas";
-import { leads } from "./routes/leads";
-import { properties } from "./routes/properties";
-import { tasks } from "./routes/tasks";
 import { agents } from "./routes/agents";
 import { analytics } from "./routes/analytics";
+import { attachments } from "./routes/attachments";
+import { audit } from "./routes/audit";
 import { invitations } from "./routes/invitations";
+import { leads } from "./routes/leads";
+import { properties } from "./routes/properties";
 import { settings } from "./routes/settings";
+import { tasks } from "./routes/tasks";
 import { webhooks } from "./routes/webhooks";
 import { whatsapp } from "./routes/whatsapp";
 import { seed } from "./routes/seed";
 
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const allowedOrigins = buildAllowedOrigins({
   configured: process.env.ALLOWED_ORIGINS,
   websiteUrl: process.env.WEBSITE_URL,
@@ -56,44 +48,8 @@ const app = new Hono()
   .basePath("api")
   .use("*", authMiddleware)
   .get("/health", (c) => c.json({ status: "ok" }, 200))
-  .post("/upload/presign", requireTenant, async (c) => {
-    const bodyResult = await parseJson(c, uploadRequestSchema);
-    if (!bodyResult.success) return bodyResult.response;
-
-    const user = c.get("user")!;
-    const agencyId = c.get("agencyId") as string;
-    const { filename, contentType, sizeBytes, propertyId, purpose } = bodyResult.data;
-    if (!process.env.S3_BUCKET) return c.json({ error: "Storage is not configured" }, 503);
-
-    const safeFilename = sanitizeUploadFilename(filename);
-    let keyPrefix: string;
-    if (purpose === "agency-logo") {
-      keyPrefix = `agencies/${agencyId}/branding`;
-    } else if (propertyId) {
-      const property = await db.select({ id: schema.properties.id }).from(schema.properties)
-        .where(and(
-          eq(schema.properties.id, propertyId),
-          eq(schema.properties.agencyId, agencyId),
-        )).get();
-      if (!property) return c.json({ error: "Property not found" }, 404);
-      keyPrefix = `agencies/${agencyId}/properties/${propertyId}`;
-    } else {
-      keyPrefix = `agencies/${agencyId}/properties/drafts/${user.id}`;
-    }
-
-    const key = `${keyPrefix}/${Date.now()}-${safeFilename}`;
-    const url = await getSignedUrl(
-      s3,
-      new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET,
-        Key: key,
-        ContentType: contentType,
-        ...(sizeBytes ? { ContentLength: sizeBytes } : {}),
-      }),
-      { expiresIn: 600 },
-    );
-    return c.json({ url, key, maxSizeBytes: MAX_IMAGE_BYTES }, 200);
-  })
+  .route("/attachments", attachments)
+  .route("/audit", audit)
   .route("/leads", leads)
   .route("/properties", properties)
   .route("/tasks", tasks)
