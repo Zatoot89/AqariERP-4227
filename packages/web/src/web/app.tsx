@@ -15,6 +15,7 @@ import LeadDetailPage from "./pages/leads/lead-detail";
 import ContactsPage from "./pages/contacts";
 import DevelopmentsPage from "./pages/developments";
 import InventoryPage from "./pages/inventory/index";
+import TransactionsPage from "./pages/transactions/index";
 import PropertiesPage from "./pages/properties/index";
 import TasksPage from "./pages/tasks";
 import AgentsPage from "./pages/agents";
@@ -43,6 +44,7 @@ export default function App() {
       <Route path="/contacts"><ProtectedPage><ContactsPage /></ProtectedPage></Route>
       <Route path="/developments"><ProtectedPage><DevelopmentsPage /></ProtectedPage></Route>
       <Route path="/inventory"><ProtectedPage><InventoryPage /></ProtectedPage></Route>
+      <Route path="/transactions"><ProtectedPage><TransactionsPage /></ProtectedPage></Route>
       <Route path="/properties"><ProtectedPage><PropertiesPage /></ProtectedPage></Route>
       <Route path="/tasks"><ProtectedPage><TasksPage /></ProtectedPage></Route>
 
