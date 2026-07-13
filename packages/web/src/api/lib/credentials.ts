@@ -46,10 +46,12 @@ export function decryptCredential(
   }
 
   const parts = value.split(":");
-  if (parts.length !== 6) throw new Error("Invalid encrypted credential format");
+  if (parts.length !== 5) throw new Error("Invalid encrypted credential format");
 
-  const [, , version, ivEncoded, tagEncoded, ciphertextEncoded] = parts;
-  if (version !== "v1") throw new Error("Unsupported encrypted credential version");
+  const [marker, version, ivEncoded, tagEncoded, ciphertextEncoded] = parts;
+  if (`${marker}:${version}` !== PREFIX) {
+    throw new Error("Unsupported encrypted credential version");
+  }
 
   const key = decodeKey(encodedKey);
   const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivEncoded, "base64"));
