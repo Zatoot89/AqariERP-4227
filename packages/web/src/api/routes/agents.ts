@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { requireRole, requireTenant } from "../middleware/auth";
@@ -20,6 +20,23 @@ async function findAgencyProfile(agencyId: string, profileId: string): Promise<P
   return db.select().from(schema.profiles)
     .where(and(eq(schema.profiles.id, profileId), eq(schema.profiles.agencyId, agencyId)))
     .get();
+}
+
+async function recordStaffAudit(options: {
+  agencyId: string;
+  userId: string;
+  type: string;
+  body: string;
+  meta: Record<string, unknown>;
+}): Promise<void> {
+  await db.insert(schema.activities).values({
+    id: nanoid(),
+    agencyId: options.agencyId,
+    userId: options.userId,
+    type: options.type,
+    body: options.body,
+    meta: JSON.stringify(options.meta),
+  });
 }
 
 export const agents = new Hono()
@@ -71,32 +88,76 @@ export const agents = new Hono()
       .where(eq(schema.user.email, email)).get();
     if (existingUser) return c.json({ error: "A user with this email already exists" }, 409);
 
-    const existingInvitation = await db.select({ id: schema.invitations.id })
-      .from(schema.invitations)
+    const now = Date.now();
+    const existingInvitation = await db.select().from(schema.invitations)
       .where(and(
         eq(schema.invitations.agencyId, agencyId),
         eq(schema.invitations.email, email),
-        isNull(schema.invitations.acceptedAt),
-        isNull(schema.invitations.revokedAt),
-        gt(schema.invitations.expiresAt, Date.now()),
       ))
       .get();
-    if (existingInvitation) {
+    if (
+      existingInvitation &&
+      existingInvitation.acceptedAt == null &&
+      existingInvitation.revokedAt == null &&
+      existingInvitation.expiresAt > now
+    ) {
       return c.json({ error: "An active invitation already exists for this email" }, 409);
+    }
+    if (existingInvitation?.acceptedAt) {
+      return c.json({ error: "This invitation identity has already been accepted" }, 409);
     }
 
     const token = createInvitationToken();
-    const expiresAt = invitationExpiresAt();
-    const invitationId = nanoid();
-    await db.insert(schema.invitations).values({
-      id: invitationId,
+    const tokenHash = hashInvitationToken(token);
+    const expiresAt = invitationExpiresAt(now);
+    let invitationId: string;
+
+    if (existingInvitation) {
+      const refreshed = await db.update(schema.invitations).set({
+        name,
+        role,
+        tokenHash,
+        invitedBy: user.id,
+        expiresAt,
+        acceptedAt: null,
+        revokedAt: null,
+        createdAt: now,
+      }).where(and(
+        eq(schema.invitations.id, existingInvitation.id),
+        eq(schema.invitations.agencyId, agencyId),
+        isNull(schema.invitations.acceptedAt),
+        or(
+          lte(schema.invitations.expiresAt, now),
+          isNotNull(schema.invitations.revokedAt),
+        ),
+      )).returning({ id: schema.invitations.id });
+      if (refreshed.length !== 1) {
+        return c.json({ error: "Invitation changed concurrently; try again" }, 409);
+      }
+      invitationId = refreshed[0].id;
+    } else {
+      invitationId = nanoid();
+      const inserted = await db.insert(schema.invitations).values({
+        id: invitationId,
+        agencyId,
+        email,
+        name,
+        role,
+        tokenHash,
+        invitedBy: user.id,
+        expiresAt,
+      }).onConflictDoNothing().returning({ id: schema.invitations.id });
+      if (inserted.length !== 1) {
+        return c.json({ error: "An invitation already exists for this email" }, 409);
+      }
+    }
+
+    await recordStaffAudit({
       agencyId,
-      email,
-      name,
-      role,
-      tokenHash: hashInvitationToken(token),
-      invitedBy: user.id,
-      expiresAt,
+      userId: user.id,
+      type: "staff_invitation_created",
+      body: "Staff invitation created",
+      meta: { invitationId, email, role, expiresAt },
     });
 
     const agency = await db.select().from(schema.agencies)
@@ -127,6 +188,7 @@ export const agents = new Hono()
     async (c) => {
       const idResult = parseParam(c, entityIdSchema);
       if (!idResult.success) return idResult.response;
+      const user = c.get("user")!;
       const caller = c.get("profile") as Profile;
       const agencyId = c.get("agencyId") as string;
       const invitation = await db.select().from(schema.invitations)
@@ -146,6 +208,13 @@ export const agents = new Hono()
           eq(schema.invitations.id, invitation.id),
           eq(schema.invitations.agencyId, agencyId),
         ));
+      await recordStaffAudit({
+        agencyId,
+        userId: user.id,
+        type: "staff_invitation_revoked",
+        body: "Staff invitation revoked",
+        meta: { invitationId: invitation.id, email: invitation.email, role: invitation.role },
+      });
       return c.json({ ok: true }, 200);
     },
   )
@@ -228,5 +297,18 @@ export const agents = new Hono()
       .set({ role: body.role, active: body.active })
       .where(and(eq(schema.profiles.id, targetId), eq(schema.profiles.agencyId, agencyId)))
       .returning();
+    await recordStaffAudit({
+      agencyId,
+      userId: user.id,
+      type: "staff_profile_updated",
+      body: "Staff role or status updated",
+      meta: {
+        targetId,
+        previousRole: target.role,
+        nextRole,
+        previousActive: target.active,
+        nextActive,
+      },
+    });
     return c.json({ agent: profile }, 200);
   });
