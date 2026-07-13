@@ -68,6 +68,7 @@ export default function AcceptInvitePage() {
             <div>
               <label htmlFor="invite-password" className="label">{t("auth.password")}</label>
               <input
+                aria-label={t("auth.password")}
                 id="invite-password"
                 type="password"
                 className="input"
@@ -86,6 +87,7 @@ export default function AcceptInvitePage() {
                 {t("invite.confirm_password", "Confirm password")}
               </label>
               <input
+                aria-label={t("invite.confirm_password", "Confirm password")}
                 id="invite-confirm-password"
                 type="password"
                 className="input"
