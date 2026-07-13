@@ -40,8 +40,10 @@ jobs:
         with:
           bun-version: 1.3.5
 
-      - name: Synchronize workspace lock metadata
-        run: bun install
+      - name: Generate clean Aqari workspace lockfile
+        run: |
+          rm -f bun.lock
+          bun install
 
       - name: Upload synchronized lockfile
         uses: actions/upload-artifact@v4
