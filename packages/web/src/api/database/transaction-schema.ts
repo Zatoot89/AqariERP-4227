@@ -1,0 +1,352 @@
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  contacts,
+  inventoryProperties,
+  units,
+} from "./core-domain-schema";
+import { agencies, attachments, leads, profiles } from "./schema";
+
+export const viewings = sqliteTable(
+  "viewings",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    viewingNumber: text("viewing_number").notNull(),
+    propertyId: text("property_id").references(() => inventoryProperties.id, { onDelete: "restrict" }),
+    unitId: text("unit_id").references(() => units.id, { onDelete: "restrict" }),
+    contactId: text("contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    leadId: text("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    assignedAgentId: text("assigned_agent_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    status: text("status").notNull().default("scheduled"),
+    scheduledAt: integer("scheduled_at").notNull(),
+    completedAt: integer("completed_at"),
+    feedback: text("feedback"),
+    rating: integer("rating"),
+    cancellationReason: text("cancellation_reason"),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+    deletedAt: integer("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("viewings_agency_number_unique").on(table.agencyId, table.viewingNumber),
+    index("viewings_agency_schedule_idx").on(table.agencyId, table.scheduledAt, table.status),
+    index("viewings_unit_idx").on(table.agencyId, table.unitId, table.scheduledAt),
+    index("viewings_contact_idx").on(table.agencyId, table.contactId, table.scheduledAt),
+  ],
+);
+
+export const offers = sqliteTable(
+  "offers",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    offerNumber: text("offer_number").notNull(),
+    negotiationRootId: text("negotiation_root_id").notNull(),
+    parentOfferId: text("parent_offer_id"),
+    version: integer("version").notNull().default(1),
+    propertyId: text("property_id").references(() => inventoryProperties.id, { onDelete: "restrict" }),
+    unitId: text("unit_id").references(() => units.id, { onDelete: "restrict" }),
+    buyerContactId: text("buyer_contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    sellerContactId: text("seller_contact_id").references(() => contacts.id, { onDelete: "restrict" }),
+    leadId: text("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("draft"),
+    offeredAmount: real("offered_amount").notNull(),
+    currency: text("currency").notNull().default("USD"),
+    validUntil: integer("valid_until"),
+    terms: text("terms"),
+    submittedAt: integer("submitted_at"),
+    acceptedAt: integer("accepted_at"),
+    rejectedAt: integer("rejected_at"),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("offers_agency_number_unique").on(table.agencyId, table.offerNumber),
+    uniqueIndex("offers_negotiation_version_unique").on(table.agencyId, table.negotiationRootId, table.version),
+    index("offers_agency_status_idx").on(table.agencyId, table.status, table.updatedAt),
+    index("offers_unit_idx").on(table.agencyId, table.unitId, table.status),
+    index("offers_buyer_idx").on(table.agencyId, table.buyerContactId, table.status),
+  ],
+);
+
+export const reservations = sqliteTable(
+  "reservations",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    reservationNumber: text("reservation_number").notNull(),
+    unitId: text("unit_id").notNull().references(() => units.id, { onDelete: "restrict" }),
+    contactId: text("contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    offerId: text("offer_id").references(() => offers.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("draft"),
+    startsAt: integer("starts_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    depositAmount: real("deposit_amount"),
+    currency: text("currency").notNull().default("USD"),
+    notes: text("notes"),
+    convertedTransactionType: text("converted_transaction_type"),
+    convertedTransactionId: text("converted_transaction_id"),
+    activatedAt: integer("activated_at"),
+    releasedAt: integer("released_at"),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("reservations_agency_number_unique").on(table.agencyId, table.reservationNumber),
+    index("reservations_unit_status_idx").on(table.agencyId, table.unitId, table.status, table.expiresAt),
+    index("reservations_contact_idx").on(table.agencyId, table.contactId, table.status),
+  ],
+);
+
+export const leases = sqliteTable(
+  "leases",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    leaseNumber: text("lease_number").notNull(),
+    parentLeaseId: text("parent_lease_id"),
+    unitId: text("unit_id").notNull().references(() => units.id, { onDelete: "restrict" }),
+    offerId: text("offer_id").references(() => offers.id, { onDelete: "set null" }),
+    reservationId: text("reservation_id").references(() => reservations.id, { onDelete: "set null" }),
+    landlordContactId: text("landlord_contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    tenantContactId: text("tenant_contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    status: text("status").notNull().default("draft"),
+    startsAt: integer("starts_at").notNull(),
+    endsAt: integer("ends_at").notNull(),
+    noticeDays: integer("notice_days").notNull().default(30),
+    rentAmount: real("rent_amount").notNull(),
+    rentFrequency: text("rent_frequency").notNull().default("annual"),
+    securityDeposit: real("security_deposit"),
+    currency: text("currency").notNull().default("USD"),
+    terms: text("terms"),
+    handoverAt: integer("handover_at"),
+    terminationAt: integer("termination_at"),
+    terminationReason: text("termination_reason"),
+    approvedAt: integer("approved_at"),
+    activatedAt: integer("activated_at"),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("leases_agency_number_unique").on(table.agencyId, table.leaseNumber),
+    index("leases_unit_period_idx").on(table.agencyId, table.unitId, table.startsAt, table.endsAt, table.status),
+    index("leases_tenant_idx").on(table.agencyId, table.tenantContactId, table.status),
+  ],
+);
+
+export const sales = sqliteTable(
+  "sales",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    saleNumber: text("sale_number").notNull(),
+    propertyId: text("property_id").references(() => inventoryProperties.id, { onDelete: "restrict" }),
+    unitId: text("unit_id").references(() => units.id, { onDelete: "restrict" }),
+    offerId: text("offer_id").references(() => offers.id, { onDelete: "set null" }),
+    reservationId: text("reservation_id").references(() => reservations.id, { onDelete: "set null" }),
+    buyerContactId: text("buyer_contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    sellerContactId: text("seller_contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    status: text("status").notNull().default("draft"),
+    agreedValue: real("agreed_value").notNull(),
+    depositAmount: real("deposit_amount"),
+    currency: text("currency").notNull().default("USD"),
+    agreementAt: integer("agreement_at"),
+    expectedHandoverAt: integer("expected_handover_at"),
+    handoverAt: integer("handover_at"),
+    completedAt: integer("completed_at"),
+    terminationAt: integer("termination_at"),
+    terminationReason: text("termination_reason"),
+    terms: text("terms"),
+    approvedAt: integer("approved_at"),
+    activatedAt: integer("activated_at"),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("sales_agency_number_unique").on(table.agencyId, table.saleNumber),
+    index("sales_unit_status_idx").on(table.agencyId, table.unitId, table.status),
+    index("sales_property_status_idx").on(table.agencyId, table.propertyId, table.status),
+    index("sales_buyer_idx").on(table.agencyId, table.buyerContactId, table.status),
+  ],
+);
+
+export const transactionParties = sqliteTable(
+  "transaction_parties",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    transactionType: text("transaction_type").notNull(),
+    transactionId: text("transaction_id").notNull(),
+    contactId: text("contact_id").notNull().references(() => contacts.id, { onDelete: "restrict" }),
+    partyRole: text("party_role").notNull(),
+    isSignatory: integer("is_signatory").notNull().default(0),
+    signatureStatus: text("signature_status").notNull().default("not_requested"),
+    signedAt: integer("signed_at"),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("transaction_parties_unique").on(
+      table.agencyId,
+      table.transactionType,
+      table.transactionId,
+      table.contactId,
+      table.partyRole,
+    ),
+    index("transaction_parties_transaction_idx").on(
+      table.agencyId,
+      table.transactionType,
+      table.transactionId,
+    ),
+  ],
+);
+
+export const saleMilestones = sqliteTable(
+  "sale_milestones",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    saleId: text("sale_id").notNull().references(() => sales.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    nameAr: text("name_ar"),
+    amount: real("amount"),
+    dueAt: integer("due_at"),
+    status: text("status").notNull().default("pending"),
+    completedAt: integer("completed_at"),
+    notes: text("notes"),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [index("sale_milestones_sale_idx").on(table.agencyId, table.saleId, table.status)],
+);
+
+export const transactionApprovals = sqliteTable(
+  "transaction_approvals",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    transactionType: text("transaction_type").notNull(),
+    transactionId: text("transaction_id").notNull(),
+    requestedBy: text("requested_by").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    approverId: text("approver_id").references(() => profiles.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("pending"),
+    requestedAt: integer("requested_at").notNull(),
+    decidedAt: integer("decided_at"),
+    note: text("note"),
+  },
+  (table) => [
+    index("transaction_approvals_transaction_idx").on(
+      table.agencyId,
+      table.transactionType,
+      table.transactionId,
+      table.status,
+    ),
+  ],
+);
+
+export const transactionStateEvents = sqliteTable(
+  "transaction_state_events",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    transactionType: text("transaction_type").notNull(),
+    transactionId: text("transaction_id").notNull(),
+    fromState: text("from_state"),
+    toState: text("to_state").notNull(),
+    actorId: text("actor_id").references(() => profiles.id, { onDelete: "set null" }),
+    reason: text("reason"),
+    metadata: text("metadata"),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    index("transaction_state_events_idx").on(
+      table.agencyId,
+      table.transactionType,
+      table.transactionId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const documentSequences = sqliteTable(
+  "document_sequences",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    sequenceKey: text("sequence_key").notNull(),
+    documentType: text("document_type").notNull(),
+    year: integer("year").notNull(),
+    prefix: text("prefix").notNull(),
+    padding: integer("padding").notNull().default(6),
+    nextNumber: integer("next_number").notNull().default(1),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [uniqueIndex("document_sequences_unique").on(table.agencyId, table.sequenceKey)],
+);
+
+export const transactionTemplates = sqliteTable(
+  "transaction_templates",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    templateType: text("template_type").notNull(),
+    name: text("name").notNull(),
+    language: text("language").notNull(),
+    version: integer("version").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    bodyHtml: text("body_html").notNull(),
+    active: integer("active").notNull().default(1),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("transaction_templates_version_unique").on(
+      table.agencyId,
+      table.templateType,
+      table.language,
+      table.version,
+    ),
+    index("transaction_templates_active_idx").on(
+      table.agencyId,
+      table.templateType,
+      table.language,
+      table.active,
+    ),
+  ],
+);
+
+export const transactionDocuments = sqliteTable(
+  "transaction_documents",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+    transactionType: text("transaction_type").notNull(),
+    transactionId: text("transaction_id").notNull(),
+    documentNumber: text("document_number").notNull(),
+    templateId: text("template_id").notNull().references(() => transactionTemplates.id, { onDelete: "restrict" }),
+    templateVersion: integer("template_version").notNull(),
+    language: text("language").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    snapshot: text("snapshot").notNull(),
+    renderedHtml: text("rendered_html").notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    pdfAttachmentId: text("pdf_attachment_id").references(() => attachments.id, { onDelete: "restrict" }),
+    status: text("status").notNull().default("html_ready"),
+    createdBy: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    voidedAt: integer("voided_at"),
+  },
+  (table) => [
+    uniqueIndex("transaction_documents_number_unique").on(table.agencyId, table.documentNumber),
+    index("transaction_documents_transaction_idx").on(
+      table.agencyId,
+      table.transactionType,
+      table.transactionId,
+      table.createdAt,
+    ),
+  ],
+);
