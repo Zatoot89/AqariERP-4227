@@ -3,17 +3,20 @@ import { db } from "../api/database";
 import * as schema from "../api/database/schema";
 import { sendEmail, taskReminderEmail } from "./email";
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+function positiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
-/**
- * Pragmatic MVP reminder system: no real job queue/cron infra in this sandbox,
- * so this runs as a loop inside the same long-lived Bun process. It finds tasks
- * that are overdue and haven't been reminded about yet, emails the assignee once,
- * and stamps `remindedAt` so it never double-sends.
- *
- * Limitation: only fires while this server process is running. For a real
- * production deployment, replace with a proper scheduled job (cron, queue, etc).
- */
+const CHECK_INTERVAL_MS = positiveInteger(
+  process.env.TASK_REMINDER_INTERVAL_MS,
+  5 * 60 * 1000,
+);
+const INITIAL_DELAY_MS = positiveInteger(
+  process.env.TASK_REMINDER_INITIAL_DELAY_MS,
+  15_000,
+);
+
 async function checkOverdueTasks() {
   try {
     const now = Date.now();
@@ -22,19 +25,22 @@ async function checkOverdueTasks() {
         eq(schema.tasks.done, 0),
         lt(schema.tasks.dueAt, now),
         isNull(schema.tasks.remindedAt),
-      )
+      ),
     );
 
     for (const task of overdue) {
       if (!task.dueAt || !task.assignedTo) continue;
 
-      const assignee = await db.select().from(schema.user).where(eq(schema.user.id, task.assignedTo)).get();
+      const assignee = await db.select().from(schema.user)
+        .where(eq(schema.user.id, task.assignedTo)).get();
       if (!assignee?.email) continue;
 
-      const lead = task.leadId ? await db.select().from(schema.leads).where(eq(schema.leads.id, task.leadId)).get() : undefined;
+      const lead = task.leadId
+        ? await db.select().from(schema.leads).where(eq(schema.leads.id, task.leadId)).get()
+        : undefined;
       const appUrl = process.env.WEBSITE_URL ?? "";
 
-      await sendEmail({
+      const sent = await sendEmail({
         to: assignee.email,
         ...taskReminderEmail({
           name: assignee.name ?? "",
@@ -46,15 +52,22 @@ async function checkOverdueTasks() {
         }),
       });
 
-      await db.update(schema.tasks).set({ remindedAt: now }).where(eq(schema.tasks.id, task.id));
+      if (sent) {
+        await db.update(schema.tasks).set({ remindedAt: now })
+          .where(eq(schema.tasks.id, task.id));
+      }
     }
-  } catch (err) {
-    console.error("[task-reminders] check failed:", err);
+  } catch (error) {
+    console.error("[task-reminders] check failed:", error);
   }
 }
 
 export function startTaskReminderLoop() {
-  // Run once shortly after boot, then on the interval.
-  setTimeout(checkOverdueTasks, 15_000);
+  if (process.env.TASK_REMINDERS_ENABLED === "false") {
+    console.info("[task-reminders] disabled by configuration");
+    return;
+  }
+
+  setTimeout(checkOverdueTasks, INITIAL_DELAY_MS);
   setInterval(checkOverdueTasks, CHECK_INTERVAL_MS);
 }
