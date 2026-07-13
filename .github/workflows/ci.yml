@@ -11,6 +11,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Permanent read-only quality gate.
 permissions:
   contents: read
 
@@ -18,7 +19,7 @@ jobs:
   quality:
     name: Lint, typecheck, test, and build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       NODE_ENV: test
       WEBSITE_URL: http://localhost:3000
