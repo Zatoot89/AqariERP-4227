@@ -1,6 +1,7 @@
 import "./context";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import { and, eq } from "drizzle-orm";
 
 process.env.DATABASE_URL = `file:transaction-lifecycle-${process.pid}-${Date.now()}.db`;
 process.env.DATABASE_AUTH_TOKEN = "";

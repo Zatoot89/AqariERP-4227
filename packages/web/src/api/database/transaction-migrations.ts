@@ -205,6 +205,27 @@ const validationTriggers = [
   `CREATE TRIGGER IF NOT EXISTS transaction_templates_no_update BEFORE UPDATE ON transaction_templates BEGIN SELECT RAISE(ABORT, 'template versions are immutable'); END`,
   `CREATE TRIGGER IF NOT EXISTS transaction_templates_no_delete BEFORE DELETE ON transaction_templates BEGIN SELECT RAISE(ABORT, 'template versions are immutable'); END`,
   `CREATE TRIGGER IF NOT EXISTS transaction_documents_no_delete BEFORE DELETE ON transaction_documents BEGIN SELECT RAISE(ABORT, 'transaction documents are immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS offers_validate_update BEFORE UPDATE OF status, offered_amount, property_id, unit_id ON offers BEGIN
+    SELECT CASE WHEN (NEW.property_id IS NULL) = (NEW.unit_id IS NULL) THEN RAISE(ABORT, 'offer must target exactly one asset') END;
+    SELECT CASE WHEN NEW.status NOT IN ('draft','submitted','under_review','countered','accepted','rejected','expired','withdrawn') THEN RAISE(ABORT, 'invalid offer status') END;
+    SELECT CASE WHEN NEW.offered_amount < 0 THEN RAISE(ABORT, 'invalid offer amount') END;
+  END`,
+  `CREATE TRIGGER IF NOT EXISTS reservations_validate_update BEFORE UPDATE OF status, starts_at, expires_at, deposit_amount ON reservations BEGIN
+    SELECT CASE WHEN NEW.status NOT IN ('draft','active','converted','released','expired','cancelled') THEN RAISE(ABORT, 'invalid reservation status') END;
+    SELECT CASE WHEN NEW.expires_at <= NEW.starts_at THEN RAISE(ABORT, 'invalid reservation period') END;
+    SELECT CASE WHEN NEW.deposit_amount IS NOT NULL AND NEW.deposit_amount < 0 THEN RAISE(ABORT, 'invalid reservation deposit') END;
+  END`,
+  `CREATE TRIGGER IF NOT EXISTS leases_validate_update BEFORE UPDATE OF status, starts_at, ends_at, rent_amount, notice_days, rent_frequency ON leases BEGIN
+    SELECT CASE WHEN NEW.status NOT IN ('draft','pending_approval','active','renewal_due','renewed','rejected','terminated','expired','completed','cancelled') THEN RAISE(ABORT, 'invalid lease status') END;
+    SELECT CASE WHEN NEW.ends_at <= NEW.starts_at THEN RAISE(ABORT, 'invalid lease period') END;
+    SELECT CASE WHEN NEW.rent_amount < 0 OR NEW.notice_days < 0 THEN RAISE(ABORT, 'invalid lease financial terms') END;
+    SELECT CASE WHEN NEW.rent_frequency NOT IN ('monthly','quarterly','semiannual','annual','custom') THEN RAISE(ABORT, 'invalid rent frequency') END;
+  END`,
+  `CREATE TRIGGER IF NOT EXISTS sales_validate_update BEFORE UPDATE OF status, agreed_value, deposit_amount, property_id, unit_id ON sales BEGIN
+    SELECT CASE WHEN (NEW.property_id IS NULL) = (NEW.unit_id IS NULL) THEN RAISE(ABORT, 'sale must target exactly one asset') END;
+    SELECT CASE WHEN NEW.status NOT IN ('draft','pending_approval','active','completed','rejected','terminated','cancelled') THEN RAISE(ABORT, 'invalid sale status') END;
+    SELECT CASE WHEN NEW.agreed_value < 0 OR (NEW.deposit_amount IS NOT NULL AND NEW.deposit_amount < 0) THEN RAISE(ABORT, 'invalid sale values') END;
+  END`,
 ];
 
 const conflictTriggers = [
