@@ -1,16 +1,17 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { requireRole, requireTenant } from "../middleware/auth";
-import { auth } from "../auth";
+import {
+  createInvitationToken,
+  hashInvitationToken,
+  invitationExpiresAt,
+} from "../lib/invitations";
 import { nanoid } from "../lib/id";
 import { parseJson, parseParam } from "../lib/validation";
-import {
-  createAgentSchema,
-  entityIdSchema,
-  updateAgentSchema,
-} from "../validation/schemas";
+import { createInvitationSchema } from "../validation/invitations";
+import { entityIdSchema, updateAgentSchema } from "../validation/schemas";
 import { sendEmail, agentInviteEmail } from "../../services/email";
 
 type Profile = typeof schema.profiles.$inferSelect;
@@ -34,54 +35,112 @@ export const agents = new Hono()
     }));
     return c.json({ agents: agentList }, 200);
   })
+  .get("/invitations", requireTenant, requireRole("admin", "manager"), async (c) => {
+    const agencyId = c.get("agencyId") as string;
+    const invitations = await db.select({
+      id: schema.invitations.id,
+      email: schema.invitations.email,
+      name: schema.invitations.name,
+      role: schema.invitations.role,
+      expiresAt: schema.invitations.expiresAt,
+      acceptedAt: schema.invitations.acceptedAt,
+      revokedAt: schema.invitations.revokedAt,
+      createdAt: schema.invitations.createdAt,
+    }).from(schema.invitations)
+      .where(eq(schema.invitations.agencyId, agencyId))
+      .orderBy(desc(schema.invitations.createdAt));
+    return c.json({ invitations }, 200);
+  })
   .post("/", requireTenant, requireRole("admin", "manager"), async (c) => {
-    const bodyResult = await parseJson(c, createAgentSchema);
+    const bodyResult = await parseJson(c, createInvitationSchema);
     if (!bodyResult.success) return bodyResult.response;
 
+    const user = c.get("user")!;
     const caller = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const { name, email, role, password } = bodyResult.data;
+    const { name, email, role } = bodyResult.data;
     if (caller.role === "manager" && role !== "agent") {
-      return c.json({ error: "Managers may only create agents" }, 403);
+      return c.json({ error: "Managers may only invite agents" }, 403);
     }
 
-    const tempPassword = password ?? `Aqari${nanoid(12)}!`;
-    let userId: string;
-    try {
-      const result = await auth.api.signUpEmail({ body: { name, email, password: tempPassword } });
-      userId = result.user.id;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to create user";
-      return c.json({ error: message }, 400);
+    const existingUser = await db.select({ id: schema.user.id }).from(schema.user)
+      .where(eq(schema.user.email, email)).get();
+    if (existingUser) return c.json({ error: "A user with this email already exists" }, 409);
+
+    const existingInvitation = await db.select({ id: schema.invitations.id })
+      .from(schema.invitations)
+      .where(and(
+        eq(schema.invitations.agencyId, agencyId),
+        eq(schema.invitations.email, email),
+        isNull(schema.invitations.acceptedAt),
+        isNull(schema.invitations.revokedAt),
+        gt(schema.invitations.expiresAt, Date.now()),
+      ))
+      .get();
+    if (existingInvitation) {
+      return c.json({ error: "An active invitation already exists for this email" }, 409);
     }
 
-    await db.insert(schema.profiles).values({
-      id: userId, agencyId, role, active: 1,
-    }).onConflictDoNothing();
+    const token = createInvitationToken();
+    const expiresAt = invitationExpiresAt();
+    const invitationId = nanoid();
+    await db.insert(schema.invitations).values({
+      id: invitationId,
+      agencyId,
+      email,
+      name,
+      role,
+      tokenHash: hashInvitationToken(token),
+      invitedBy: user.id,
+      expiresAt,
+    });
 
-    const authUser = await db.select().from(schema.user)
-      .where(eq(schema.user.id, userId)).get();
-    const newProfile = await findAgencyProfile(agencyId, userId);
     const agency = await db.select().from(schema.agencies)
       .where(eq(schema.agencies.id, agencyId)).get();
     const appUrl = process.env.WEBSITE_URL ?? process.env.RUNABLE_URL ?? "";
-
-    sendEmail({
+    const invitationUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token)}`;
+    const emailResult = await sendEmail({
       to: email,
       ...agentInviteEmail({
-        name, email, password: tempPassword, role,
-        agencyName: agency?.name ?? "Aqari CRM", appUrl,
+        name,
+        role,
+        agencyName: agency?.name ?? "Aqari ERP",
+        invitationUrl,
+        expiresAt,
       }),
-    }).catch(() => {});
+    });
 
     return c.json({
-      agent: {
-        ...newProfile,
-        name: authUser?.name ?? "",
-        email: authUser?.email ?? "",
-      },
+      invitation: { id: invitationId, email, name, role, expiresAt },
+      emailSent: Boolean(emailResult),
+      ...(process.env.NODE_ENV !== "production" ? { invitationUrl } : {}),
     }, 201);
   })
+  .delete(
+    "/invitations/:id",
+    requireTenant,
+    requireRole("admin", "manager"),
+    async (c) => {
+      const idResult = parseParam(c, entityIdSchema);
+      if (!idResult.success) return idResult.response;
+      const agencyId = c.get("agencyId") as string;
+      const invitation = await db.select().from(schema.invitations)
+        .where(and(
+          eq(schema.invitations.id, idResult.data),
+          eq(schema.invitations.agencyId, agencyId),
+        ))
+        .get();
+      if (!invitation) return c.json({ error: "Not found" }, 404);
+      if (invitation.acceptedAt) return c.json({ error: "Accepted invitations cannot be revoked" }, 409);
+
+      await db.update(schema.invitations).set({ revokedAt: Date.now() })
+        .where(and(
+          eq(schema.invitations.id, invitation.id),
+          eq(schema.invitations.agencyId, agencyId),
+        ));
+      return c.json({ ok: true }, 200);
+    },
+  )
   .get("/:id", requireTenant, async (c) => {
     const idResult = parseParam(c, entityIdSchema);
     if (!idResult.success) return idResult.response;
