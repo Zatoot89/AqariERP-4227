@@ -185,6 +185,11 @@ export const offers = new Hono()
       });
       const offerNumber = await nextDocumentNumber(tx, agencyId, "offer");
       const counterId = nanoid();
+      const inheritedParties = await tx.select().from(transactionParties).where(and(
+        eq(transactionParties.agencyId, agencyId),
+        eq(transactionParties.transactionType, "offer"),
+        eq(transactionParties.transactionId, existing.id),
+      ));
       const [created] = await tx.insert(offerTable).values({
         id: counterId,
         agencyId,
@@ -206,6 +211,19 @@ export const offers = new Hono()
         createdAt: now,
         updatedAt: now,
       }).returning();
+      for (const party of inheritedParties) {
+        await tx.insert(transactionParties).values({
+          id: nanoid(),
+          agencyId,
+          transactionType: "offer",
+          transactionId: counterId,
+          contactId: party.contactId,
+          partyRole: party.partyRole,
+          isSignatory: party.isSignatory,
+          signatureStatus: "not_requested",
+          createdAt: now,
+        });
+      }
       await tx.insert(transactionStateEvents).values({
         id: nanoid(), agencyId, transactionType: "offer", transactionId: counterId,
         fromState: null, toState: "draft", actorId: user.id,

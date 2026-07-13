@@ -279,6 +279,18 @@ export const sales = new Hono()
     const now = parsed.data.effectiveAt ?? Date.now();
     try {
       const sale = await db.transaction(async (tx) => {
+        if (parsed.data.toState === "active" && existing.reservationId) {
+          await tx.update(reservations).set({
+            status: "converted",
+            convertedTransactionType: "sale",
+            convertedTransactionId: existing.id,
+            updatedAt: now,
+          }).where(and(
+            eq(reservations.id, existing.reservationId),
+            eq(reservations.agencyId, agencyId),
+            eq(reservations.status, "active"),
+          ));
+        }
         const [updated] = await tx.update(saleTable).set({
           status: parsed.data.toState,
           approvedAt: parsed.data.toState === "active" ? now : existing.approvedAt,
@@ -318,17 +330,6 @@ export const sales = new Hono()
             reason: `Sale ${existing.saleNumber} activated`,
             now,
           });
-          if (existing.reservationId) {
-            await tx.update(reservations).set({
-              status: "converted",
-              convertedTransactionType: "sale",
-              convertedTransactionId: existing.id,
-              updatedAt: now,
-            }).where(and(
-              eq(reservations.id, existing.reservationId),
-              eq(reservations.agencyId, agencyId),
-            ));
-          }
         }
         if (parsed.data.toState === "completed") {
           await setAssetState(tx, {
@@ -341,7 +342,7 @@ export const sales = new Hono()
             now,
           });
         }
-        if (["rejected", "terminated", "cancelled"].includes(parsed.data.toState)) {
+        if (existing.status === "active" && ["terminated", "cancelled"].includes(parsed.data.toState)) {
           await setAssetState(tx, {
             agencyId,
             propertyId: existing.propertyId,

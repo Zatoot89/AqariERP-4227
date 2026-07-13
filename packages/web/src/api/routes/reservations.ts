@@ -216,7 +216,7 @@ export const reservations = new Hono()
             now,
           });
         }
-        if (["released", "expired", "cancelled"].includes(parsed.data.toState)) {
+        if (existing.status === "active" && ["released", "expired", "cancelled"].includes(parsed.data.toState)) {
           await setUnitAvailability(tx, {
             agencyId,
             unitId: existing.unitId,

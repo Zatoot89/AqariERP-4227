@@ -20,6 +20,7 @@ import { properties } from "./routes/properties";
 import { seed } from "./routes/seed";
 import { settings } from "./routes/settings";
 import { tasks } from "./routes/tasks";
+import { transactions } from "./routes/transactions";
 import { webhooks } from "./routes/webhooks";
 import { whatsapp } from "./routes/whatsapp";
 
@@ -56,6 +57,7 @@ const app = new Hono()
   .route("/contacts", contacts)
   .route("/developments", developments)
   .route("/inventory", inventory)
+  .route("/transactions", transactions)
   .route("/leads", leads)
   .route("/properties", properties)
   .route("/tasks", tasks)
