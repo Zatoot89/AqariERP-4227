@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
-import { authClient, captureToken } from "../lib/auth";
+import { authClient } from "../lib/auth";
 import { setLanguage } from "../lib/i18n";
 
 export default function SignInPage() {
@@ -18,10 +18,7 @@ export default function SignInPage() {
     event.preventDefault();
     setLoading(true);
     setError("");
-    const { error: signInError } = await authClient.signIn.email(
-      { email, password },
-      { onSuccess: captureToken },
-    );
+    const { error: signInError } = await authClient.signIn.email({ email, password });
     setLoading(false);
     if (signInError) {
       setError(signInError.message ?? "Sign in failed");
@@ -34,10 +31,7 @@ export default function SignInPage() {
     event.preventDefault();
     setLoading(true);
     setError("");
-    const { error: signUpError } = await authClient.signUp.email(
-      { name, email, password },
-      { onSuccess: captureToken },
-    );
+    const { error: signUpError } = await authClient.signUp.email({ name, email, password });
     if (signUpError) {
       setLoading(false);
       setError(signUpError.message ?? "Sign up failed");
@@ -47,10 +41,8 @@ export default function SignInPage() {
     try {
       const response = await fetch("/api/settings/bootstrap", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("aqari_token") ?? ""}`,
-          "Content-Type": "application/json",
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale: i18n.language === "ar" ? "ar" : "en" }),
       });
       if (!response.ok) {
@@ -173,10 +165,6 @@ export default function SignInPage() {
             </button>
           </form>
         </div>
-
-        <p className="text-center text-xs mt-4" style={{ color: "var(--text-muted)" }}>
-          Demo: create any account to get started
-        </p>
       </div>
     </div>
   );
