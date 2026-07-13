@@ -5,12 +5,18 @@ assertRuntimeConfig();
 const { runApplicationMigrations } = await import("./api/database/migrations");
 await runApplicationMigrations();
 
-const [{ default: app }, { startTaskReminderLoop }] = await Promise.all([
+const [
+  { default: app },
+  { startTaskReminderLoop },
+  { startAttachmentCleanupLoop },
+] = await Promise.all([
   import("./api"),
   import("./services/task-reminders"),
+  import("./services/attachment-cleanup"),
 ]);
 
 startTaskReminderLoop();
+startAttachmentCleanupLoop();
 
 const port = Number(process.env.PORT ?? 3000);
 const distDir = `${import.meta.dir}/../dist`;
