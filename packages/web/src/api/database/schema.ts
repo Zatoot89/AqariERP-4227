@@ -1,9 +1,7 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-// ─── Auth tables (Better Auth) ────────────────────────────────────────────────
 export * from "./auth-schema";
 
-// ─── Agencies ─────────────────────────────────────────────────────────────────
 export const agencies = sqliteTable("agencies", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -21,7 +19,6 @@ export const agencies = sqliteTable("agencies", {
   createdAt: integer("created_at").$defaultFn(() => Date.now()),
 });
 
-// ─── User profiles (extends Better Auth user) ─────────────────────────────────
 export const profiles = sqliteTable("profiles", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").references(() => agencies.id),
@@ -32,22 +29,26 @@ export const profiles = sqliteTable("profiles", {
   createdAt: integer("created_at").$defaultFn(() => Date.now()),
 });
 
-// ─── Staff invitations ────────────────────────────────────────────────────────
-export const invitations = sqliteTable("invitations", {
-  id: text("id").primaryKey(),
-  agencyId: text("agency_id").notNull().references(() => agencies.id),
-  email: text("email").notNull(),
-  name: text("name").notNull(),
-  role: text("role").notNull(),
-  tokenHash: text("token_hash").notNull().unique(),
-  invitedBy: text("invited_by").notNull().references(() => profiles.id),
-  expiresAt: integer("expires_at").notNull(),
-  acceptedAt: integer("accepted_at"),
-  revokedAt: integer("revoked_at"),
-  createdAt: integer("created_at").$defaultFn(() => Date.now()),
-});
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: text("id").primaryKey(),
+    agencyId: text("agency_id").notNull().references(() => agencies.id),
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    invitedBy: text("invited_by").notNull().references(() => profiles.id),
+    expiresAt: integer("expires_at").notNull(),
+    acceptedAt: integer("accepted_at"),
+    revokedAt: integer("revoked_at"),
+    createdAt: integer("created_at").$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("invitations_agency_email_unique").on(table.agencyId, table.email),
+  ],
+);
 
-// ─── Leads ────────────────────────────────────────────────────────────────────
 export const leads = sqliteTable("leads", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").references(() => agencies.id),
@@ -70,7 +71,6 @@ export const leads = sqliteTable("leads", {
   updatedAt: integer("updated_at").$defaultFn(() => Date.now()),
 });
 
-// ─── Properties ───────────────────────────────────────────────────────────────
 export const properties = sqliteTable("properties", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").references(() => agencies.id),
@@ -96,7 +96,6 @@ export const properties = sqliteTable("properties", {
   updatedAt: integer("updated_at").$defaultFn(() => Date.now()),
 });
 
-// ─── Lead ↔ Property links ────────────────────────────────────────────────────
 export const leadProperties = sqliteTable("lead_properties", {
   id: text("id").primaryKey(),
   leadId: text("lead_id").references(() => leads.id),
@@ -106,7 +105,6 @@ export const leadProperties = sqliteTable("lead_properties", {
   linkedAt: integer("linked_at").$defaultFn(() => Date.now()),
 });
 
-// ─── Tasks ────────────────────────────────────────────────────────────────────
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").references(() => agencies.id),
@@ -122,7 +120,6 @@ export const tasks = sqliteTable("tasks", {
   createdAt: integer("created_at").$defaultFn(() => Date.now()),
 });
 
-// ─── Activity log ─────────────────────────────────────────────────────────────
 export const activities = sqliteTable("activities", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").references(() => agencies.id),
@@ -134,7 +131,6 @@ export const activities = sqliteTable("activities", {
   createdAt: integer("created_at").$defaultFn(() => Date.now()),
 });
 
-// ─── WhatsApp messages ────────────────────────────────────────────────────────
 export const whatsappMessages = sqliteTable("whatsapp_messages", {
   id: text("id").primaryKey(),
   agencyId: text("agency_id").references(() => agencies.id),
