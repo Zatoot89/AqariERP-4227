@@ -1,5 +1,6 @@
-import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import * as coreDomainSchema from "./core-domain-schema";
 import * as schema from "./schema";
 
 export const databaseClient = createClient({
@@ -7,4 +8,6 @@ export const databaseClient = createClient({
   authToken: process.env.DATABASE_AUTH_TOKEN,
 });
 
-export const db = drizzle(databaseClient, { schema });
+export const db = drizzle(databaseClient, {
+  schema: { ...schema, ...coreDomainSchema },
+});

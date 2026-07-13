@@ -2,23 +2,26 @@ import "./context";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auth } from "./auth";
-import { authMiddleware } from "./middleware/auth";
 import {
   buildAllowedOrigins,
   resolveAllowedOrigin,
 } from "./lib/security";
+import { authMiddleware } from "./middleware/auth";
 import { agents } from "./routes/agents";
 import { analytics } from "./routes/analytics";
 import { attachments } from "./routes/attachments";
 import { audit } from "./routes/audit";
+import { contacts } from "./routes/contacts";
+import { developments } from "./routes/developments";
+import { inventory } from "./routes/inventory";
 import { invitations } from "./routes/invitations";
 import { leads } from "./routes/leads";
 import { properties } from "./routes/properties";
+import { seed } from "./routes/seed";
 import { settings } from "./routes/settings";
 import { tasks } from "./routes/tasks";
 import { webhooks } from "./routes/webhooks";
 import { whatsapp } from "./routes/whatsapp";
-import { seed } from "./routes/seed";
 
 const allowedOrigins = buildAllowedOrigins({
   configured: process.env.ALLOWED_ORIGINS,
@@ -50,6 +53,9 @@ const app = new Hono()
   .get("/health", (c) => c.json({ status: "ok" }, 200))
   .route("/attachments", attachments)
   .route("/audit", audit)
+  .route("/contacts", contacts)
+  .route("/developments", developments)
+  .route("/inventory", inventory)
   .route("/leads", leads)
   .route("/properties", properties)
   .route("/tasks", tasks)

@@ -2,8 +2,19 @@ import { assertRuntimeConfig } from "./api/lib/runtime-config";
 
 assertRuntimeConfig();
 
-const { runApplicationMigrations } = await import("./api/database/migrations");
+const [
+  { runApplicationMigrations },
+  { runDataFoundationMigrations },
+  { runCoreDomainMigrations },
+] = await Promise.all([
+  import("./api/database/migrations"),
+  import("./api/database/data-foundation-migrations"),
+  import("./api/database/core-domain-migrations"),
+]);
+
 await runApplicationMigrations();
+await runDataFoundationMigrations();
+await runCoreDomainMigrations();
 
 const [
   { default: app },
