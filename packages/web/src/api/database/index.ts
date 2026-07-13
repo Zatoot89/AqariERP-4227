@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import * as coreDomainSchema from "./core-domain-schema";
+import * as financeSchema from "./finance-schema";
 import * as schema from "./schema";
 import * as transactionSchema from "./transaction-schema";
 
@@ -10,5 +11,5 @@ export const databaseClient = createClient({
 });
 
 export const db = drizzle(databaseClient, {
-  schema: { ...schema, ...coreDomainSchema, ...transactionSchema },
+  schema: { ...schema, ...coreDomainSchema, ...transactionSchema, ...financeSchema },
 });

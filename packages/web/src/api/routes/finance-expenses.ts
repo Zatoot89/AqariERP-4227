@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { db } from "../database";
 import { contacts, inventoryProperties, units } from "../database/core-domain-schema";
 import { expenses as expenseTable, financeEvents } from "../database/finance-schema";
@@ -65,7 +65,8 @@ export const financeExpenses = new Hono()
       parsed.data.status ? eq(expenseTable.status, parsed.data.status) : undefined,
       parsed.data.propertyId ? eq(expenseTable.propertyId, parsed.data.propertyId) : undefined,
       parsed.data.unitId ? eq(expenseTable.unitId, parsed.data.unitId) : undefined,
-      parsed.data.from ? eq(expenseTable.incurredAt, parsed.data.from) : undefined,
+      parsed.data.from ? gte(expenseTable.incurredAt, parsed.data.from) : undefined,
+      parsed.data.to ? lte(expenseTable.incurredAt, parsed.data.to) : undefined,
     )).orderBy(desc(expenseTable.incurredAt), desc(expenseTable.createdAt))
       .limit(parsed.data.pageSize)
       .offset((parsed.data.page - 1) * parsed.data.pageSize);

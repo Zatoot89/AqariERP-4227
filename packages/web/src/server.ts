@@ -7,17 +7,20 @@ const [
   { runDataFoundationMigrations },
   { runCoreDomainMigrations },
   { runTransactionMigrations },
+  { runFinanceMigrations },
 ] = await Promise.all([
   import("./api/database/migrations"),
   import("./api/database/data-foundation-migrations"),
   import("./api/database/core-domain-migrations"),
   import("./api/database/transaction-migrations"),
+  import("./api/database/finance-migrations"),
 ]);
 
 await runApplicationMigrations();
 await runDataFoundationMigrations();
 await runCoreDomainMigrations();
 await runTransactionMigrations();
+await runFinanceMigrations();
 
 const [
   { default: app },
