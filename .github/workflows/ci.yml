@@ -43,15 +43,6 @@ jobs:
       - name: Synchronize workspace lock metadata
         run: bun install
 
-      - name: Verify placeholder identities are gone
-        run: |
-          if grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
-            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=release \
-            --exclude='identity-sync.yml' --exclude='ci.yml' .; then
-            echo 'Legacy template identity remains.' >&2
-            exit 1
-          fi
-
       - name: Upload synchronized lockfile
         uses: actions/upload-artifact@v4
         with:
@@ -59,6 +50,24 @@ jobs:
           path: bun.lock
           if-no-files-found: error
           retention-days: 1
+
+      - name: Verify placeholder identities are gone
+        shell: bash
+        run: |
+          set +e
+          grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
+            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=release \
+            --exclude='identity-sync.yml' --exclude='ci.yml' . > identity-scan.log
+          status=$?
+          set -e
+          cat identity-scan.log
+          if [ "$status" -eq 0 ]; then
+            echo 'Legacy template identity remains.' >&2
+            exit 1
+          fi
+          if [ "$status" -ne 1 ]; then
+            exit "$status"
+          fi
 
       - name: Install dependencies from synchronized lockfile
         run: bun install --frozen-lockfile
@@ -85,6 +94,7 @@ jobs:
         with:
           name: ci-diagnostics-${{ github.run_attempt }}
           path: |
+            identity-scan.log
             lint.log
             typecheck.log
             test.log
