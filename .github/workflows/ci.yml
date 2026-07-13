@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   quality:
@@ -40,32 +40,26 @@ jobs:
         with:
           bun-version: 1.3.5
 
-      - name: Synchronize product identity metadata
-        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/product-identity'
-        shell: bash
+      - name: Synchronize workspace lock metadata
+        run: bun install
+
+      - name: Verify placeholder identities are gone
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('packages/web/src/api/routes/agents.ts')
-          text = path.read_text()
-          text = text.replace('process.env.WEBSITE_URL ?? process.env.RUNABLE_URL ?? ""', 'process.env.WEBSITE_URL ?? ""')
-          path.write_text(text)
-          PY
-          bun install
           if grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
-            --exclude-dir=.git --exclude='.github/workflows/ci.yml' --exclude='.github/workflows/identity-sync.yml' .; then
+            --exclude-dir=.git --exclude='identity-sync.yml' --exclude='ci.yml' .; then
             echo 'Legacy template identity remains.' >&2
             exit 1
           fi
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add bun.lock packages/web/src/api/routes/agents.ts
-            git commit -m "synchronize Aqari workspace lock metadata"
-            git push origin HEAD:agent/product-identity
-          fi
 
-      - name: Install dependencies
+      - name: Upload synchronized lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: aqari-bun-lock
+          path: bun.lock
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Install dependencies from synchronized lockfile
         run: bun install --frozen-lockfile
 
       - name: Lint
