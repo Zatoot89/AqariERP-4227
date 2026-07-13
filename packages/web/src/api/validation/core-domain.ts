@@ -50,7 +50,7 @@ export const contactAddressSchema = z.object({
   isPrimary: z.boolean().optional(),
 }).strict();
 
-const contactFields = {
+const contactBaseSchema = z.object({
   contactType: z.enum(["person", "company"]),
   displayName: z.string().trim().min(1).max(250),
   displayNameAr: nullableText(250),
@@ -58,22 +58,18 @@ const contactFields = {
   preferredLanguage: z.enum(["en", "ar"]).optional(),
   notes: nullableText(5000),
   doNotContact: z.boolean().optional(),
-};
+});
 
-export const createContactSchema = z.object({
-  ...contactFields,
+export const createContactSchema = contactBaseSchema.extend({
   roles: z.array(contactRoleSchema).max(9).optional(),
   methods: z.array(contactMethodSchema).max(20).optional(),
   addresses: z.array(contactAddressSchema).max(10).optional(),
 }).strict();
 
-export const updateContactSchema = z.object({
-  ...Object.fromEntries(
-    Object.entries(contactFields).map(([key, value]) => [key, value.optional()]),
-  ),
-}).strict().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field must be provided",
-});
+export const updateContactSchema = contactBaseSchema.partial().strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field must be provided",
+  });
 
 export const contactListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
@@ -91,7 +87,7 @@ export const duplicateContactQuerySchema = z.object({
   message: "Provide a name, phone, or email",
 });
 
-const developmentFields = {
+const developmentBaseSchema = z.object({
   parentId: z.preprocess(emptyToNull, entityIdSchema.nullable().optional()),
   developmentType: z.enum(["compound", "project", "building"]),
   code: nullableText(100),
@@ -107,16 +103,13 @@ const developmentFields = {
   longitude: z.preprocess(emptyToNull, z.number().min(-180).max(180).nullable().optional()),
   floorsCount: nullableInteger,
   completedAt: nullableTimestamp,
-};
-
-export const createDevelopmentSchema = z.object(developmentFields).strict();
-export const updateDevelopmentSchema = z.object({
-  ...Object.fromEntries(
-    Object.entries(developmentFields).map(([key, value]) => [key, value.optional()]),
-  ),
-}).strict().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field must be provided",
 });
+
+export const createDevelopmentSchema = developmentBaseSchema.strict();
+export const updateDevelopmentSchema = developmentBaseSchema.partial().strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field must be provided",
+  });
 
 export const developmentListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
@@ -145,7 +138,7 @@ export const inventoryPropertyTypeSchema = z.enum([
   "other",
 ]);
 
-const inventoryPropertyFields = {
+const inventoryPropertyBaseSchema = z.object({
   developmentId: z.preprocess(emptyToNull, entityIdSchema.nullable().optional()),
   assetCode: nullableText(100),
   title: z.string().trim().min(1).max(300),
@@ -166,16 +159,13 @@ const inventoryPropertyFields = {
   currency: z.string().trim().length(3).toUpperCase().optional(),
   assignedAgentId: z.preprocess(emptyToNull, entityIdSchema.nullable().optional()),
   customFields: z.record(z.string(), z.unknown()).optional(),
-};
-
-export const createInventoryPropertySchema = z.object(inventoryPropertyFields).strict();
-export const updateInventoryPropertySchema = z.object({
-  ...Object.fromEntries(
-    Object.entries(inventoryPropertyFields).map(([key, value]) => [key, value.optional()]),
-  ),
-}).strict().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field must be provided",
 });
+
+export const createInventoryPropertySchema = inventoryPropertyBaseSchema.strict();
+export const updateInventoryPropertySchema = inventoryPropertyBaseSchema.partial().strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field must be provided",
+  });
 
 export const inventoryPropertyListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
@@ -187,7 +177,7 @@ export const inventoryPropertyListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(30),
 }).strict();
 
-const unitFields = {
+const unitBaseSchema = z.object({
   unitNumber: z.string().trim().min(1).max(100),
   floor: nullableText(50),
   unitType: z.string().trim().min(1).max(100),
@@ -204,16 +194,13 @@ const unitFields = {
   currency: z.string().trim().length(3).toUpperCase().optional(),
   amenities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
-};
-
-export const createUnitSchema = z.object(unitFields).strict();
-export const updateUnitSchema = z.object({
-  ...Object.fromEntries(
-    Object.entries(unitFields).map(([key, value]) => [key, value.optional()]),
-  ),
-}).strict().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field must be provided",
 });
+
+export const createUnitSchema = unitBaseSchema.strict();
+export const updateUnitSchema = unitBaseSchema.partial().strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field must be provided",
+  });
 
 export const createOwnershipSchema = z.object({
   ownerContactId: entityIdSchema,
