@@ -192,6 +192,12 @@ export const propertyListQuerySchema = paginationQuerySchema
   })
   .strict();
 
+const attachmentIdsSchema = z
+  .array(entityIdSchema)
+  .max(30)
+  .refine((ids) => new Set(ids).size === ids.length, "Attachment IDs must be unique")
+  .optional();
+
 const propertyFields = {
   title: z.string().trim().min(1).max(300),
   titleAr: nullableText(300),
@@ -208,7 +214,7 @@ const propertyFields = {
   country: z.preprocess(emptyToNull, countrySchema.nullable().optional()),
   description: nullableText(10000),
   descriptionAr: nullableText(10000),
-  images: z.string().max(200000).optional(),
+  attachmentIds: attachmentIdsSchema,
   externalId: nullableText(200),
 };
 
@@ -292,7 +298,7 @@ export const updateAgencySchema = z
     locale: z.enum(["en", "ar"]).optional(),
     currency: currencySchema.optional(),
     timezone: optionalText(100),
-    logoUrl: z.preprocess(emptyToNull, z.string().max(1000).nullable().optional()),
+    logoAttachmentId: z.preprocess(emptyToNull, entityIdSchema.nullable().optional()),
     waAccessToken: optionalText(4000),
     waPhoneNumberId: optionalText(200),
     waVerifyToken: optionalText(500),
@@ -307,9 +313,10 @@ export const uploadRequestSchema = z
   .object({
     filename: z.string().trim().min(1).max(255),
     contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/avif"]),
-    sizeBytes: z.number().int().positive().max(10 * 1024 * 1024).optional(),
+    sizeBytes: z.number().int().positive().max(10 * 1024 * 1024),
+    checksumSha256: z.string().trim().toLowerCase().regex(/^[a-f0-9]{64}$/).optional(),
     propertyId: entityIdSchema.optional(),
-    purpose: z.enum(["agency-logo"]).optional(),
+    purpose: z.enum(["property", "agency-logo"]).default("property"),
   })
   .strict();
 
@@ -319,4 +326,12 @@ export const sendWhatsappMessageSchema = z
 
 export const analyticsQuerySchema = z
   .object({ range: z.enum(["7d", "30d", "90d", "all"]).optional() })
+  .strict();
+
+export const auditLogQuerySchema = paginationQuerySchema
+  .extend({
+    action: z.string().trim().max(100).optional(),
+    entityType: z.string().trim().max(100).optional(),
+    entityId: entityIdSchema.optional(),
+  })
   .strict();

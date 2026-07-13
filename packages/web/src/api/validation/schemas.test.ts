@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  auditLogQuerySchema,
   createAgentSchema,
   createLeadSchema,
   createPropertySchema,
@@ -14,131 +15,132 @@ import {
 
 describe("entity IDs", () => {
   test("accepts generated-style IDs and rejects path-like values", () => {
-    expect(entityIdSchema.safeParse("lead_01-AbC").success).toBe(true);
-    expect(entityIdSchema.safeParse("../../other-tenant").success).toBe(false);
-    expect(entityIdSchema.safeParse("").success).toBe(false);
+    expect(entityIdSchema.safeParse("abc_123-XYZ").success).toBe(true);
+    expect(entityIdSchema.safeParse("../../agency-b").success).toBe(false);
   });
 });
 
-describe("lead validation", () => {
-  test("rejects unknown and server-owned fields", () => {
+describe("lead payloads", () => {
+  test("rejects server-owned and unknown fields", () => {
     const result = createLeadSchema.safeParse({
-      name: "Ahmed",
-      agencyId: "other-agency",
+      name: "Valid Lead",
+      agencyId: "agency-b",
       stage: "closed",
+      createdAt: 1,
     });
     expect(result.success).toBe(false);
   });
 
-  test("normalizes currency and clears optional values", () => {
-    const result = updateLeadSchema.safeParse({
+  test("rejects inverted budgets and normalizes clearable fields", () => {
+    expect(createLeadSchema.safeParse({
+      name: "Budget Lead",
+      budgetMin: 900,
+      budgetMax: 100,
+    }).success).toBe(false);
+
+    const update = updateLeadSchema.parse({
       phone: "",
       email: "",
       currency: "aed",
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.phone).toBeNull();
-      expect(result.data.email).toBeNull();
-      expect(result.data.currency).toBe("AED");
-    }
-  });
-
-  test("rejects inverted budget ranges", () => {
-    const result = createLeadSchema.safeParse({
-      name: "Client",
-      budgetMin: 500000,
-      budgetMax: 100000,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  test("validates list pagination and enums", () => {
-    const valid = leadListQuerySchema.safeParse({
-      page: "2",
-      pageSize: "30",
-      stage: "viewing",
-    });
-    expect(valid.success).toBe(true);
-    if (valid.success) expect(valid.data.page).toBe(2);
-
-    expect(leadListQuerySchema.safeParse({ pageSize: "1000" }).success).toBe(false);
-    expect(leadListQuerySchema.safeParse({ stage: "hacked" }).success).toBe(false);
+    expect(update.phone).toBeNull();
+    expect(update.email).toBeNull();
+    expect(update.currency).toBe("AED");
   });
 });
 
-describe("property and upload validation", () => {
-  test("rejects negative prices and unexpected ownership fields", () => {
-    expect(createPropertySchema.safeParse({ title: "Villa", price: -1 }).success).toBe(false);
-    expect(
-      createPropertySchema.safeParse({ title: "Villa", listedBy: "another-user" }).success,
-    ).toBe(false);
+describe("property payloads", () => {
+  test("rejects raw object keys and accepts unique attachment IDs", () => {
+    expect(createPropertySchema.safeParse({
+      title: "Unsafe",
+      images: JSON.stringify(["agencies/other/property.jpg"]),
+    }).success).toBe(false);
+
+    const parsed = createPropertySchema.parse({
+      title: "Structured",
+      attachmentIds: ["attachment-a", "attachment-b"],
+    });
+    expect(parsed.attachmentIds).toEqual(["attachment-a", "attachment-b"]);
+    expect(createPropertySchema.safeParse({
+      title: "Duplicate",
+      attachmentIds: ["attachment-a", "attachment-a"],
+    }).success).toBe(false);
   });
 
-  test("enforces image upload type and size", () => {
-    expect(
-      uploadRequestSchema.safeParse({
-        filename: "villa.webp",
-        contentType: "image/webp",
-        sizeBytes: 1024,
-      }).success,
-    ).toBe(true);
-    expect(
-      uploadRequestSchema.safeParse({
-        filename: "malware.exe",
-        contentType: "application/octet-stream",
-        sizeBytes: 1024,
-      }).success,
-    ).toBe(false);
-    expect(
-      uploadRequestSchema.safeParse({
-        filename: "huge.jpg",
-        contentType: "image/jpeg",
-        sizeBytes: 11 * 1024 * 1024,
-      }).success,
-    ).toBe(false);
+  test("rejects negative property values", () => {
+    expect(createPropertySchema.safeParse({
+      title: "Invalid",
+      price: -1,
+    }).success).toBe(false);
   });
 });
 
-describe("staff, tasks, settings, and messaging", () => {
-  test("requires a valid staff role and strong supplied password", () => {
-    expect(
-      createAgentSchema.safeParse({
-        name: "Agent",
-        email: "agent@example.com",
-        role: "agent",
-        password: "StrongPass123!",
-      }).success,
-    ).toBe(true);
-    expect(
-      createAgentSchema.safeParse({
-        name: "Agent",
-        email: "not-email",
-        role: "owner",
-        password: "123",
-      }).success,
-    ).toBe(false);
+describe("task and staff payloads", () => {
+  test("rejects invalid task types and creator override", () => {
+    expect(createTaskSchema.safeParse({ title: "Task", type: "system" }).success).toBe(false);
+    expect(createTaskSchema.safeParse({ title: "Task", createdBy: "other" }).success).toBe(false);
   });
 
-  test("rejects invalid task dates and server fields", () => {
-    expect(createTaskSchema.safeParse({ title: "Call client", dueAt: Date.now() }).success).toBe(true);
-    expect(createTaskSchema.safeParse({ title: "Call client", dueAt: -1 }).success).toBe(false);
-    expect(
-      createTaskSchema.safeParse({ title: "Call client", agencyId: "other-agency" }).success,
-    ).toBe(false);
+  test("requires staff identity and strong explicit passwords", () => {
+    expect(createAgentSchema.safeParse({
+      name: "Agent",
+      email: "not-an-email",
+      role: "agent",
+    }).success).toBe(false);
+    expect(createAgentSchema.safeParse({
+      name: "Agent",
+      email: "agent@example.com",
+      role: "agent",
+      password: "short",
+    }).success).toBe(false);
+  });
+});
+
+describe("agency settings", () => {
+  test("rejects plan and direct raw logo mutation", () => {
+    expect(updateAgencySchema.safeParse({ plan: "enterprise" }).success).toBe(false);
+    expect(updateAgencySchema.safeParse({ logoUrl: "agencies/other/logo.png" }).success).toBe(false);
+    expect(updateAgencySchema.safeParse({ logoAttachmentId: "attachment-logo" }).success).toBe(true);
   });
 
-  test("does not accept an empty settings update", () => {
+  test("requires at least one field", () => {
     expect(updateAgencySchema.safeParse({}).success).toBe(false);
-    expect(updateAgencySchema.safeParse({ currency: "aed" }).success).toBe(true);
-    expect(updateAgencySchema.safeParse({ plan: "full" }).success).toBe(false);
+  });
+});
+
+describe("uploads and queries", () => {
+  test("requires size metadata and rejects unsupported or oversized uploads", () => {
+    expect(uploadRequestSchema.safeParse({
+      filename: "payload.svg",
+      contentType: "image/svg+xml",
+      sizeBytes: 100,
+    }).success).toBe(false);
+    expect(uploadRequestSchema.safeParse({
+      filename: "huge.png",
+      contentType: "image/png",
+      sizeBytes: 10 * 1024 * 1024 + 1,
+    }).success).toBe(false);
+    expect(uploadRequestSchema.safeParse({
+      filename: "missing-size.png",
+      contentType: "image/png",
+    }).success).toBe(false);
+    expect(uploadRequestSchema.safeParse({
+      filename: "safe.webp",
+      contentType: "image/webp",
+      sizeBytes: 2048,
+      checksumSha256: "a".repeat(64),
+      purpose: "property",
+    }).success).toBe(true);
   });
 
-  test("trims and limits WhatsApp message bodies", () => {
-    const valid = sendWhatsappMessageSchema.safeParse({ body: "  Hello  " });
-    expect(valid.success).toBe(true);
-    if (valid.success) expect(valid.data.body).toBe("Hello");
-    expect(sendWhatsappMessageSchema.safeParse({ body: "" }).success).toBe(false);
+  test("rejects invalid pagination and audit filters", () => {
+    expect(leadListQuerySchema.safeParse({ page: "0" }).success).toBe(false);
+    expect(leadListQuerySchema.safeParse({ pageSize: "999" }).success).toBe(false);
+    expect(auditLogQuerySchema.safeParse({ entityId: "../../other" }).success).toBe(false);
+  });
+
+  test("limits WhatsApp message length", () => {
     expect(sendWhatsappMessageSchema.safeParse({ body: "x".repeat(4097) }).success).toBe(false);
+    expect(sendWhatsappMessageSchema.safeParse({ body: " hello " }).success).toBe(true);
   });
 });

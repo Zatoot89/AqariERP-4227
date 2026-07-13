@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { z, type ZodType } from "zod";
+import { z } from "zod";
 
 export type ValidationIssue = {
   path: string;
@@ -19,59 +19,55 @@ function issuesFrom(error: z.ZodError): ValidationIssue[] {
   }));
 }
 
-function invalid<T>(c: Context, message: string, error: z.ZodError<T>): ParseResult<never> {
-  return {
-    success: false,
-    response: c.json(
-      {
-        error: message,
-        issues: issuesFrom(error),
-      },
-      400,
-    ),
-  };
+function validationResponse(c: Context, error: z.ZodError): Response {
+  return c.json(
+    {
+      error: "Validation failed",
+      issues: issuesFrom(error),
+    },
+    400,
+  );
 }
 
-export async function parseJson<T>(
+function parseValue<Schema extends z.ZodType>(
   c: Context,
-  schema: ZodType<T>,
-): Promise<ParseResult<T>> {
-  let raw: unknown;
+  schema: Schema,
+  value: unknown,
+): ParseResult<z.output<Schema>> {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    return { success: false, response: validationResponse(c, parsed.error) };
+  }
+  return { success: true, data: parsed.data };
+}
+
+export async function parseJson<Schema extends z.ZodType>(
+  c: Context,
+  schema: Schema,
+): Promise<ParseResult<z.output<Schema>>> {
+  let value: unknown;
   try {
-    raw = await c.req.json();
+    value = await c.req.json();
   } catch {
     return {
       success: false,
-      response: c.json(
-        {
-          error: "Invalid JSON body",
-          issues: [{ path: "", code: "invalid_json", message: "Request body must be valid JSON" }],
-        },
-        400,
-      ),
+      response: c.json({ error: "Request body must be valid JSON" }, 400),
     };
   }
-
-  const result = schema.safeParse(raw);
-  if (!result.success) return invalid(c, "Validation failed", result.error);
-  return { success: true, data: result.data };
+  return parseValue(c, schema, value);
 }
 
-export function parseQuery<T>(
+export function parseQuery<Schema extends z.ZodType>(
   c: Context,
-  schema: ZodType<T>,
-): ParseResult<T> {
-  const result = schema.safeParse(c.req.query());
-  if (!result.success) return invalid(c, "Invalid query parameters", result.error);
-  return { success: true, data: result.data };
+  schema: Schema,
+): ParseResult<z.output<Schema>> {
+  return parseValue(c, schema, c.req.query());
 }
 
-export function parseParam<T>(
+export function parseParam<Schema extends z.ZodType>(
   c: Context,
-  schema: ZodType<T>,
+  schema: Schema,
   name = "id",
-): ParseResult<T> {
-  const result = schema.safeParse(c.req.param(name));
-  if (!result.success) return invalid(c, `Invalid ${name}`, result.error);
-  return { success: true, data: result.data };
+): ParseResult<z.output<Schema>> {
+  return parseValue(c, schema, c.req.param(name));
 }
