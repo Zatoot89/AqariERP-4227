@@ -48,18 +48,22 @@ jobs:
         run: |
           rm -f bun.lock
           bun install
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "synchronize Aqari workspace lock metadata"
+            git push origin HEAD:agent/product-identity
+          fi
+
+      - name: Verify placeholder identities are gone
+        shell: bash
+        run: |
           if grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
             --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=release \
             --exclude='identity-sync.yml' --exclude='ci.yml' .; then
             echo 'Legacy template identity remains.' >&2
             exit 1
-          fi
-          if ! git diff --quiet -- bun.lock; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add bun.lock
-            git commit -m "synchronize Aqari workspace lock metadata"
-            git push origin HEAD:agent/product-identity
           fi
 
       - name: Install dependencies
