@@ -63,14 +63,10 @@ function json(body: unknown): string {
 }
 
 function request(path: string, userId: string, init: RequestInit = {}) {
-  return app.request(path, {
-    ...init,
-    headers: {
-      "x-test-user": userId,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  const headers = new Headers(init.headers);
+  headers.set("x-test-user", userId);
+  if (init.body) headers.set("Content-Type", "application/json");
+  return app.request(path, { ...init, headers });
 }
 
 beforeAll(async () => {
