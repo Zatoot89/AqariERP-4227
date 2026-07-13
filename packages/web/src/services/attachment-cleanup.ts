@@ -26,7 +26,12 @@ const BATCH_SIZE = Math.min(
   positiveInteger(process.env.ATTACHMENT_CLEANUP_BATCH_SIZE, 100),
 );
 
-export async function cleanupAttachments(now = Date.now()): Promise<{
+type ObjectRemover = (key: string) => Promise<void>;
+
+export async function cleanupAttachments(
+  now = Date.now(),
+  removeObject: ObjectRemover = deleteObject,
+): Promise<{
   scanned: number;
   purged: number;
   failed: number;
@@ -48,7 +53,7 @@ export async function cleanupAttachments(now = Date.now()): Promise<{
   let failed = 0;
   for (const attachment of candidates) {
     try {
-      await deleteObject(attachment.objectKey);
+      await removeObject(attachment.objectKey);
       await db.transaction(async (tx) => {
         await tx
           .update(schema.attachments)
