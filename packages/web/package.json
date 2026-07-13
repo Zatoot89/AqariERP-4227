@@ -1,5 +1,6 @@
 {
-  "name": "@template/web",
+  "name": "@aqari/web",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -24,7 +25,6 @@
     "@better-auth/expo": "1.4.22",
     "@libsql/client": "^0.17.2",
     "@radix-ui/react-slot": "^1.2.4",
-    "@runablehq/website-runtime": "^0.10.0",
     "@tanstack/react-query": "^5.100.14",
     "better-auth": "1.4.22",
     "class-variance-authority": "^0.7.1",
