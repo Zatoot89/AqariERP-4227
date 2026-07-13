@@ -23,7 +23,7 @@ const unitA = "tx-unit-a";
 const propertyB = "tx-property-b";
 const unitB = "tx-unit-b";
 
-let app: Hono;
+let app: Hono<any>;
 let databaseClient: Awaited<typeof import("./database")>["databaseClient"];
 let db: Awaited<typeof import("./database")>["db"];
 let schema: typeof import("./database/schema");
@@ -126,8 +126,8 @@ beforeAll(async () => {
 
   const now = Date.now();
   await db.insert(schema.agencies).values([
-    { id: agencyA, name: "Transaction Agency A", createdAt: now, updatedAt: now },
-    { id: agencyB, name: "Transaction Agency B", createdAt: now, updatedAt: now },
+    { id: agencyA, name: "Transaction Agency A", createdAt: now },
+    { id: agencyB, name: "Transaction Agency B", createdAt: now },
   ]).onConflictDoNothing();
   await db.insert(schema.user).values([
     { id: adminA, name: "Admin A", email: "tx-admin-a@example.com", emailVerified: false, createdAt: new Date(now), updatedAt: new Date(now) },
@@ -136,10 +136,10 @@ beforeAll(async () => {
     { id: adminB, name: "Admin B", email: "tx-admin-b@example.com", emailVerified: false, createdAt: new Date(now), updatedAt: new Date(now) },
   ]).onConflictDoNothing();
   await db.insert(schema.profiles).values([
-    { id: adminA, agencyId: agencyA, role: "admin", active: 1, createdAt: now, updatedAt: now },
-    { id: managerA, agencyId: agencyA, role: "manager", active: 1, createdAt: now, updatedAt: now },
-    { id: agentA, agencyId: agencyA, role: "agent", active: 1, createdAt: now, updatedAt: now },
-    { id: adminB, agencyId: agencyB, role: "admin", active: 1, createdAt: now, updatedAt: now },
+    { id: adminA, agencyId: agencyA, role: "admin", active: 1, createdAt: now },
+    { id: managerA, agencyId: agencyA, role: "manager", active: 1, createdAt: now },
+    { id: agentA, agencyId: agencyA, role: "agent", active: 1, createdAt: now },
+    { id: adminB, agencyId: agencyB, role: "admin", active: 1, createdAt: now },
   ]).onConflictDoNothing();
   await db.insert(core.contacts).values([
     { id: ownerA, agencyId: agencyA, contactType: "person", displayName: "Owner A", preferredLanguage: "en", normalizedName: "owner a", createdBy: adminA, createdAt: now, updatedAt: now },
@@ -161,7 +161,7 @@ beforeAll(async () => {
   ]).onConflictDoNothing();
 
   const { transactions } = await import("./routes/transactions");
-  app = new Hono()
+  app = new Hono<any>()
     .use("*", async (c, next) => {
       const userId = c.req.header("x-test-user");
       c.set("user", userId ? ({ id: userId } as { id: string }) : null);
