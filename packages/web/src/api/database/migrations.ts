@@ -19,6 +19,7 @@ const migrations = [
   "CREATE INDEX IF NOT EXISTS invitations_agency_idx ON invitations (agency_id)",
   "CREATE INDEX IF NOT EXISTS invitations_email_idx ON invitations (email)",
   "CREATE INDEX IF NOT EXISTS invitations_expiry_idx ON invitations (expires_at)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS invitations_agency_email_unique ON invitations (agency_id, email)",
 ];
 
 export async function runApplicationMigrations(): Promise<void> {
