@@ -1,11 +1,36 @@
-import app from "./api";
-import { startTaskReminderLoop } from "./services/task-reminders";
+import { assertRuntimeConfig } from "./api/lib/runtime-config";
+
+assertRuntimeConfig();
+
+const [{ default: app }, { startTaskReminderLoop }] = await Promise.all([
+  import("./api"),
+  import("./services/task-reminders"),
+]);
 
 startTaskReminderLoop();
 
 const port = Number(process.env.PORT ?? 3000);
 const distDir = `${import.meta.dir}/../dist`;
 const indexPath = `${distDir}/index.html`;
+
+const securityHeaders = {
+  "Content-Security-Policy": [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline'",
+    "script-src 'self'",
+    "connect-src 'self' https:",
+    "object-src 'none'",
+  ].join("; "),
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+};
 
 const server = Bun.serve({
   port,
@@ -20,19 +45,25 @@ const server = Bun.serve({
     const file = Bun.file(filePath);
 
     if (await file.exists()) {
-      return new Response(file);
+      return new Response(file, { headers: securityHeaders });
     }
 
     const index = Bun.file(indexPath);
     if (await index.exists()) {
       return new Response(index, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: {
+          ...securityHeaders,
+          "Content-Type": "text/html; charset=utf-8",
+        },
       });
     }
 
     return new Response("Build output not found. Run `bun run build` first.", {
       status: 500,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
+      headers: {
+        ...securityHeaders,
+        "Content-Type": "text/plain; charset=utf-8",
+      },
     });
   },
 });
