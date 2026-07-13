@@ -1,9 +1,9 @@
-// @see - https://www.electron.build/configuration/configuration
+// @see https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.aiarabia.aqari.erp",
   "asar": true,
-  "productName": "YourAppName",
+  "productName": "Aqari ERP",
   "directories": {
     "output": "release/${version}"
   },
@@ -12,6 +12,7 @@
     "dist-electron"
   ],
   "mac": {
+    "category": "public.app-category.business",
     "target": [
       "dmg"
     ],
@@ -35,6 +36,7 @@
     "deleteAppDataOnUninstall": false
   },
   "linux": {
+    "category": "Office",
     "target": [
       "AppImage"
     ],
