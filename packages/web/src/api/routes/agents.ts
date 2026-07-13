@@ -162,7 +162,7 @@ export const agents = new Hono()
 
     const agency = await db.select().from(schema.agencies)
       .where(eq(schema.agencies.id, agencyId)).get();
-    const appUrl = process.env.WEBSITE_URL ?? process.env.RUNABLE_URL ?? "";
+    const appUrl = process.env.WEBSITE_URL ?? "";
     const invitationUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token)}`;
     const emailResult = await sendEmail({
       to: email,
