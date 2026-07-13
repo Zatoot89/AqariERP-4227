@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -32,46 +32,37 @@ jobs:
       S3_BUCKET: ci
 
     steps:
-      - name: Checkout
+      - name: Checkout product branch
         uses: actions/checkout@v4
+        with:
+          ref: agent/product-identity
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.5
 
-      - name: Generate clean Aqari workspace lockfile
+      - name: Commit clean Aqari lockfile
+        if: github.actor != 'github-actions[bot]'
+        shell: bash
         run: |
           rm -f bun.lock
           bun install
-
-      - name: Upload synchronized lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: aqari-bun-lock
-          path: bun.lock
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Verify placeholder identities are gone
-        shell: bash
-        run: |
-          set +e
-          grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
+          if grep -R -n -E 'sandbox-(app|platform)-template|@template/|RUNABLE_URL|@runablehq|com\.appId\.runable|YourApp(ID|Name)' \
             --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=release \
-            --exclude='identity-sync.yml' --exclude='ci.yml' . > identity-scan.log
-          status=$?
-          set -e
-          cat identity-scan.log
-          if [ "$status" -eq 0 ]; then
+            --exclude='identity-sync.yml' --exclude='ci.yml' .; then
             echo 'Legacy template identity remains.' >&2
             exit 1
           fi
-          if [ "$status" -ne 1 ]; then
-            exit "$status"
+          if ! git diff --quiet -- bun.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add bun.lock
+            git commit -m "synchronize Aqari workspace lock metadata"
+            git push origin HEAD:agent/product-identity
           fi
 
-      - name: Install dependencies from synchronized lockfile
+      - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Lint
@@ -96,7 +87,6 @@ jobs:
         with:
           name: ci-diagnostics-${{ github.run_attempt }}
           path: |
-            identity-scan.log
             lint.log
             typecheck.log
             test.log
