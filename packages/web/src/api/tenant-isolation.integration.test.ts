@@ -180,14 +180,24 @@ describe("two-agency tenant isolation", () => {
     expect((await request("/leads/lead-a-other", "agent-a")).status).toBe(404);
   });
 
+  test("agents cannot enumerate staff or staff performance", async () => {
+    expect((await request("/agents", "agent-a")).status).toBe(403);
+    expect((await request("/agents/agent-a2", "agent-a")).status).toBe(403);
+    expect((await request("/agents/agent-a2/stats", "agent-a")).status).toBe(403);
+  });
+
   test("inactive profiles are blocked centrally", async () => {
     expect((await request("/leads", "inactive-a")).status).toBe(403);
   });
 
-  test("managers cannot invite administrators", async () => {
+  test("managers cannot elevate privileges or manage administrators", async () => {
     expect((await request("/agents", "manager-a", {
       method: "POST",
       body: json({ name: "Escalation", email: "escalation@example.com", role: "admin" }),
+    })).status).toBe(403);
+    expect((await request("/agents/admin-a", "manager-a", {
+      method: "PATCH",
+      body: json({ active: 0 }),
     })).status).toBe(403);
   });
 
