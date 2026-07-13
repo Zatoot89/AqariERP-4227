@@ -79,6 +79,14 @@ export const settings = new Hono()
           id: user.id, agencyId, role: "admin", active: 1,
         });
       }
+      await tx.insert(schema.activities).values({
+        id: nanoid(),
+        agencyId,
+        userId: user.id,
+        type: "agency_created",
+        body: "Agency created",
+        meta: JSON.stringify({ locale: agency.locale, country: agency.country }),
+      });
       return { agency };
     });
 
@@ -100,6 +108,7 @@ export const settings = new Hono()
       const bodyResult = await parseJson(c, updateAgencySchema);
       if (!bodyResult.success) return bodyResult.response;
 
+      const user = c.get("user")!;
       const agencyId = c.get("agencyId") as string;
       const body = bodyResult.data;
       let logoUrl: string | null | undefined;
@@ -151,6 +160,27 @@ export const settings = new Hono()
               ...(encryptedVerifyToken ? { waVerifyToken: encryptedVerifyToken } : {}),
             }),
       }).where(eq(schema.agencies.id, agencyId)).returning();
+
+      const safeFields = Object.keys(body).filter(
+        (field) => !["waAccessToken", "waVerifyToken"].includes(field),
+      );
+      const whatsappCredentialAction = clearWhatsappCredentials
+        ? "cleared"
+        : encryptedAccessToken || encryptedVerifyToken
+          ? "updated"
+          : undefined;
+      await db.insert(schema.activities).values({
+        id: nanoid(),
+        agencyId,
+        userId: user.id,
+        type: "agency_settings_updated",
+        body: "Agency settings updated",
+        meta: JSON.stringify({
+          changedFields: safeFields,
+          ...(whatsappCredentialAction ? { whatsappCredentialAction } : {}),
+        }),
+      });
+
       return c.json({ agency: await safeAgency(agency) }, 200);
     },
   )
