@@ -12,7 +12,7 @@ import AcceptInvitePage from "./pages/accept-invite";
 import DashboardPage from "./pages/dashboard";
 import LeadsPage from "./pages/leads/index";
 import LeadDetailPage from "./pages/leads/lead-detail";
-import ContactsPage from "./pages/contacts/index";
+import ContactsPage from "./pages/contacts";
 import DevelopmentsPage from "./pages/developments";
 import InventoryPage from "./pages/inventory/index";
 import PropertiesPage from "./pages/properties/index";
