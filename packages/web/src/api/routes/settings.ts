@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { requireAuth, requireRole, requireTenant } from "../middleware/auth";
+import { encryptCredential, isEncryptedCredential } from "../lib/credentials";
 import { nanoid } from "../lib/id";
 import { presignGet } from "../lib/s3";
 import { parseJson } from "../lib/validation";
@@ -22,7 +23,6 @@ async function safeAgency(agency: typeof schema.agencies.$inferSelect | undefine
     waVerifyToken: redactedVerifyToken,
     ...visibleAgency
   } = agency;
-  void redactedAccessToken;
   void redactedVerifyToken;
 
   const logoImageUrl =
@@ -33,6 +33,10 @@ async function safeAgency(agency: typeof schema.agencies.$inferSelect | undefine
     ...visibleAgency,
     logoImageUrl,
     whatsappConfigured: Boolean(agency.waAccessToken && agency.waPhoneNumberId),
+    whatsappCredentialEncrypted: isEncryptedCredential(redactedAccessToken),
+    whatsappNeedsRotation: Boolean(
+      redactedAccessToken && !isEncryptedCredential(redactedAccessToken),
+    ),
   };
 }
 
@@ -110,6 +114,22 @@ export const settings = new Hono()
       }
 
       const clearWhatsappCredentials = body.clearWhatsappCredentials === true;
+      let encryptedAccessToken: string | undefined;
+      let encryptedVerifyToken: string | undefined;
+      try {
+        encryptedAccessToken = body.waAccessToken
+          ? encryptCredential(body.waAccessToken)
+          : undefined;
+        encryptedVerifyToken = body.waVerifyToken
+          ? encryptCredential(body.waVerifyToken)
+          : undefined;
+      } catch (error) {
+        return c.json(
+          { error: error instanceof Error ? error.message : "Credential encryption failed" },
+          503,
+        );
+      }
+
       const [agency] = await db.update(schema.agencies).set({
         name: body.name,
         nameAr: body.nameAr,
@@ -126,9 +146,9 @@ export const settings = new Hono()
               waConnectedAt: null,
             }
           : {
-              ...(body.waAccessToken ? { waAccessToken: body.waAccessToken } : {}),
+              ...(encryptedAccessToken ? { waAccessToken: encryptedAccessToken } : {}),
               ...(body.waPhoneNumberId ? { waPhoneNumberId: body.waPhoneNumberId } : {}),
-              ...(body.waVerifyToken ? { waVerifyToken: body.waVerifyToken } : {}),
+              ...(encryptedVerifyToken ? { waVerifyToken: encryptedVerifyToken } : {}),
             }),
       }).where(eq(schema.agencies.id, agencyId)).returning();
       return c.json({ agency: await safeAgency(agency) }, 200);
