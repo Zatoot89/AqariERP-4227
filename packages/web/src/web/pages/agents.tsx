@@ -2,39 +2,66 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
-import { X, UserPlus, UserX, UserCheck, Users } from "lucide-react";
+import { useProfile } from "../hooks/use-profile";
+import { X, UserPlus, UserX, UserCheck, Users, Mail, Ban } from "lucide-react";
 
 const ROLES = ["agent", "manager", "admin"];
 
 export default function AgentsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const { role: currentRole } = useProfile();
+  const availableRoles = currentRole === "manager" ? ["agent"] : ROLES;
   const [showInvite, setShowInvite] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", role: "agent", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", role: "agent" });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["agents"],
     queryFn: async () => (await api.agents.$get()).json(),
   });
+  const { data: invitationsData } = useQuery({
+    queryKey: ["agent-invitations"],
+    queryFn: async () => (await api.agents.invitations.$get()).json(),
+  });
 
   const inviteMut = useMutation({
     mutationFn: async () => {
-      const res = await api.agents.$post({ json: { name: form.name, email: form.email, role: form.role, password: form.password || undefined } });
+      const res = await api.agents.$post({
+        json: { name: form.name, email: form.email, role: form.role as "admin" | "manager" | "agent" },
+      });
       const body = await res.json();
       if (!res.ok) throw new Error((body as any).error ?? "Failed");
-      return body;
+      return body as any;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["agents"] });
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["agent-invitations"] });
       setShowInvite(false);
-      setForm({ name: "", email: "", role: "agent", password: "" });
+      setForm({ name: "", email: "", role: "agent" });
       setError("");
+      setNotice(
+        result.emailSent
+          ? t("agents.invitation_sent", "Invitation sent. The link is single-use and expires automatically.")
+          : t("agents.invitation_created", "Invitation created. Email delivery is not configured in this environment."),
+      );
     },
     onError: (err: any) => setError(err.message),
   });
 
+  const revokeMut = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.agents.invitations[":id"].$delete({ param: { id } });
+      const body = await response.json();
+      if (!response.ok) throw new Error((body as any).error ?? "Failed to revoke invitation");
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-invitations"] }),
+  });
+
   const agents = data?.agents ?? [];
+  const invitations = ((invitationsData as any)?.invitations ?? []).filter(
+    (invitation: any) => !invitation.acceptedAt && !invitation.revokedAt,
+  );
 
   return (
     <div className="space-y-5">
@@ -42,12 +69,18 @@ export default function AgentsPage() {
         <h1 className="text-2xl font-bold">{t("agents.title")}</h1>
         <button
           className="btn-primary flex items-center gap-2"
-          onClick={() => { setShowInvite(true); setError(""); }}
+          onClick={() => { setShowInvite(true); setError(""); setNotice(""); }}
         >
           <UserPlus size={16} />
           {t("agents.invite")}
         </button>
       </div>
+
+      {notice && (
+        <div className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-4 py-3">
+          {notice}
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {isLoading
@@ -65,6 +98,37 @@ export default function AgentsPage() {
             ))}
       </div>
 
+      {invitations.length > 0 && (
+        <section className="card p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Mail size={17} />
+            <h2 className="font-semibold">{t("agents.pending_invitations", "Pending invitations")}</h2>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {invitations.map((invitation: any) => (
+              <div key={invitation.id} className="flex items-center justify-between gap-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-sm truncate">{invitation.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{invitation.email}</p>
+                  <p className="text-xs text-gray-400">
+                    {t(`agents.roles.${invitation.role}`, invitation.role)} · {t("agents.expires", "Expires")} {new Date(invitation.expiresAt).toLocaleString()}
+                  </p>
+                </div>
+                <button
+                  aria-label={t("agents.revoke_invitation", "Revoke invitation")}
+                  title={t("agents.revoke_invitation", "Revoke invitation")}
+                  className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
+                  disabled={revokeMut.isPending}
+                  onClick={() => revokeMut.mutate(invitation.id)}
+                >
+                  <Ban size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
           <div className="card p-6 w-full max-w-sm space-y-4">
@@ -74,6 +138,10 @@ export default function AgentsPage() {
                 <X size={18} />
               </button>
             </div>
+
+            <p className="text-sm text-gray-500">
+              {t("agents.secure_invite_help", "They will receive a single-use link to choose their own password. No password is sent by email.")}
+            </p>
 
             {error && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>
@@ -111,22 +179,10 @@ export default function AgentsPage() {
                   value={form.role}
                   onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                 >
-                  {ROLES.map(r => (
+                  {availableRoles.map(r => (
                     <option key={r} value={r}>{t(`agents.roles.${r}`, r)}</option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label htmlFor="agent-password" className="label">{t("field.password")} <span className="text-gray-400 text-xs">{t("agents.password_hint", "(optional — auto-generated and emailed to them if left blank)")}</span></label>
-                <input
-                  aria-label={t("field.password")}
-                  id="agent-password"
-                  type="password"
-                  className="input"
-                  placeholder="Leave blank to auto-generate"
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                />
               </div>
             </div>
 
@@ -160,7 +216,7 @@ function AgentCard({ agent, t }: { agent: any; t: any }) {
 
   const roleMut = useMutation({
     mutationFn: async (role: string) => {
-      await api.agents[":id"].$patch({ param: { id: agent.id }, json: { role } });
+      await api.agents[":id"].$patch({ param: { id: agent.id }, json: { role: role as "admin" | "manager" | "agent" } });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agents"] });
@@ -170,7 +226,7 @@ function AgentCard({ agent, t }: { agent: any; t: any }) {
 
   const activeMut = useMutation({
     mutationFn: async (active: number) => {
-      await api.agents[":id"].$patch({ param: { id: agent.id }, json: { active } });
+      await api.agents[":id"].$patch({ param: { id: agent.id }, json: { active: active as 0 | 1 } });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
   });

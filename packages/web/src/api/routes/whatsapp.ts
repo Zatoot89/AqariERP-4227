@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { requireRole, requireTenant } from "../middleware/auth";
+import { decryptCredential } from "../lib/credentials";
 import { nanoid } from "../lib/id";
 import { parseJson, parseParam } from "../lib/validation";
 import {
@@ -30,6 +31,12 @@ async function findAccessibleLead(
 function graphUrl(path: string): string {
   const version = process.env.WHATSAPP_GRAPH_API_VERSION ?? "v20.0";
   return `https://graph.facebook.com/${version}/${path}`;
+}
+
+function accessTokenFor(agency: typeof schema.agencies.$inferSelect): string {
+  const accessToken = decryptCredential(agency.waAccessToken);
+  if (!accessToken) throw new Error("WhatsApp access token is not configured");
+  return accessToken;
 }
 
 export const whatsapp = new Hono()
@@ -79,11 +86,27 @@ export const whatsapp = new Hono()
       );
     }
 
+    let accessToken: string;
+    try {
+      accessToken = accessTokenFor(agency);
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "WhatsApp credential could not be decrypted",
+          code: "WHATSAPP_CREDENTIAL_ROTATION_REQUIRED",
+        },
+        503,
+      );
+    }
+
     const response = await fetch(graphUrl(`${agency.waPhoneNumberId}/messages`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${agency.waAccessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
@@ -98,7 +121,7 @@ export const whatsapp = new Hono()
     }
 
     const waMessageId = result?.messages?.[0]?.id ?? nanoid();
-    await db.insert(schema.whatsappMessages).values({
+    const inserted = await db.insert(schema.whatsappMessages).values({
       id: nanoid(),
       agencyId,
       leadId,
@@ -106,17 +129,19 @@ export const whatsapp = new Hono()
       direction: "outbound",
       body: text,
       waContactId: lead.whatsappId,
-    }).onConflictDoNothing();
+    }).onConflictDoNothing().returning({ id: schema.whatsappMessages.id });
 
-    await db.insert(schema.activities).values({
-      id: nanoid(),
-      agencyId,
-      leadId,
-      userId: user.id,
-      type: "whatsapp_msg",
-      body: text,
-      meta: JSON.stringify({ direction: "outbound" }),
-    });
+    if (inserted.length > 0) {
+      await db.insert(schema.activities).values({
+        id: nanoid(),
+        agencyId,
+        leadId,
+        userId: user.id,
+        type: "whatsapp_msg",
+        body: text,
+        meta: JSON.stringify({ direction: "outbound", waMessageId }),
+      });
+    }
     return c.json({ ok: true }, 200);
   })
   .post(
@@ -131,9 +156,26 @@ export const whatsapp = new Hono()
         return c.json({ error: "Missing Access Token or Phone Number ID" }, 400);
       }
 
+      let accessToken: string;
+      try {
+        accessToken = accessTokenFor(agency);
+      } catch (error) {
+        return c.json(
+          {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "WhatsApp credential could not be decrypted",
+            code: "WHATSAPP_CREDENTIAL_ROTATION_REQUIRED",
+          },
+          503,
+        );
+      }
+
       const response = await fetch(
         graphUrl(`${agency.waPhoneNumberId}?fields=verified_name,display_phone_number`),
-        { headers: { Authorization: `Bearer ${agency.waAccessToken}` } },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
       );
       const result = await response.json();
       if (!response.ok) {

@@ -21,6 +21,7 @@ import { properties } from "./routes/properties";
 import { tasks } from "./routes/tasks";
 import { agents } from "./routes/agents";
 import { analytics } from "./routes/analytics";
+import { invitations } from "./routes/invitations";
 import { settings } from "./routes/settings";
 import { webhooks } from "./routes/webhooks";
 import { whatsapp } from "./routes/whatsapp";
@@ -45,6 +46,7 @@ const app = new Hono()
   )
   .use("*", async (c, next) => {
     await next();
+    c.header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
     c.header("X-Content-Type-Options", "nosniff");
     c.header("X-Frame-Options", "DENY");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -97,6 +99,7 @@ const app = new Hono()
   .route("/tasks", tasks)
   .route("/agents", agents)
   .route("/analytics", analytics)
+  .route("/invitations", invitations)
   .route("/settings", settings)
   .route("/webhooks", webhooks)
   .route("/whatsapp", whatsapp);

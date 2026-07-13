@@ -1,27 +1,21 @@
 import { createAuthClient } from "better-auth/react";
 
-export const TOKEN_KEY = "aqari_token";
-
-export function getToken(): string {
-  return localStorage.getItem(TOKEN_KEY) ?? "";
-}
-
 export const authClient = createAuthClient({
   baseURL: window.location.origin,
   basePath: "/api/auth",
   fetchOptions: {
-    auth: {
-      type: "Bearer",
-      token: () => localStorage.getItem(TOKEN_KEY) ?? "",
-    },
+    credentials: "include",
   },
 });
 
-export function captureToken(ctx: { response: Response }) {
-  const token = ctx.response.headers.get("set-auth-token");
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-}
+/**
+ * Browser sessions are stored only in Better Auth's HttpOnly cookie. This
+ * callback remains as a compatibility no-op for existing form call sites.
+ */
+export function captureToken(): void {}
 
-export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
+/**
+ * Better Auth clears the browser session cookie during sign-out. No browser
+ * token is stored in localStorage or sessionStorage.
+ */
+export function clearToken(): void {}

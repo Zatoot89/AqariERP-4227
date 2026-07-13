@@ -1,15 +1,14 @@
 import { Switch, Route, Redirect } from "wouter";
-import "./lib/i18n"; // initialize i18n (side-effect)
+import "./lib/i18n";
 
-// Layouts & shared
 import { Layout } from "./components/layout";
 import { ProtectedRoute } from "./components/protected-route";
 import { RoleGate } from "./components/role-gate";
 
-// Pages
 import LandingPage from "./pages/landing";
 import SignInPage from "./pages/sign-in";
 import SignUpPage from "./pages/sign-up";
+import AcceptInvitePage from "./pages/accept-invite";
 import DashboardPage from "./pages/dashboard";
 import LeadsPage from "./pages/leads/index";
 import LeadDetailPage from "./pages/leads/lead-detail";
@@ -25,6 +24,7 @@ export default function App() {
       <Route path="/" component={LandingPage} />
       <Route path="/sign-in" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
+      <Route path="/accept-invite" component={AcceptInvitePage} />
 
       <Route path="/dashboard">
         <ProtectedRoute>
@@ -96,7 +96,6 @@ export default function App() {
         </ProtectedRoute>
       </Route>
 
-      {/* Catch-all */}
       <Route>
         <Redirect to="/" />
       </Route>

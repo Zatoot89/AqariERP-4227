@@ -1,16 +1,17 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { requireRole, requireTenant } from "../middleware/auth";
-import { auth } from "../auth";
+import {
+  createInvitationToken,
+  hashInvitationToken,
+  invitationExpiresAt,
+} from "../lib/invitations";
 import { nanoid } from "../lib/id";
 import { parseJson, parseParam } from "../lib/validation";
-import {
-  createAgentSchema,
-  entityIdSchema,
-  updateAgentSchema,
-} from "../validation/schemas";
+import { createInvitationSchema } from "../validation/invitations";
+import { entityIdSchema, updateAgentSchema } from "../validation/schemas";
 import { sendEmail, agentInviteEmail } from "../../services/email";
 
 type Profile = typeof schema.profiles.$inferSelect;
@@ -21,8 +22,25 @@ async function findAgencyProfile(agencyId: string, profileId: string): Promise<P
     .get();
 }
 
+async function recordStaffAudit(options: {
+  agencyId: string;
+  userId: string;
+  type: string;
+  body: string;
+  meta: Record<string, unknown>;
+}): Promise<void> {
+  await db.insert(schema.activities).values({
+    id: nanoid(),
+    agencyId: options.agencyId,
+    userId: options.userId,
+    type: options.type,
+    body: options.body,
+    meta: JSON.stringify(options.meta),
+  });
+}
+
 export const agents = new Hono()
-  .get("/", requireTenant, async (c) => {
+  .get("/", requireTenant, requireRole("admin", "manager"), async (c) => {
     const agencyId = c.get("agencyId") as string;
     const agentProfiles = await db.select().from(schema.profiles)
       .where(eq(schema.profiles.agencyId, agencyId));
@@ -34,55 +52,173 @@ export const agents = new Hono()
     }));
     return c.json({ agents: agentList }, 200);
   })
-  .post("/", requireTenant, requireRole("admin", "manager"), async (c) => {
-    const bodyResult = await parseJson(c, createAgentSchema);
-    if (!bodyResult.success) return bodyResult.response;
-
+  .get("/invitations", requireTenant, requireRole("admin", "manager"), async (c) => {
     const caller = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const { name, email, role, password } = bodyResult.data;
+    const rows = await db.select({
+      id: schema.invitations.id,
+      email: schema.invitations.email,
+      name: schema.invitations.name,
+      role: schema.invitations.role,
+      expiresAt: schema.invitations.expiresAt,
+      acceptedAt: schema.invitations.acceptedAt,
+      revokedAt: schema.invitations.revokedAt,
+      createdAt: schema.invitations.createdAt,
+    }).from(schema.invitations)
+      .where(eq(schema.invitations.agencyId, agencyId))
+      .orderBy(desc(schema.invitations.createdAt));
+    const invitations = caller.role === "manager"
+      ? rows.filter((invitation) => invitation.role === "agent")
+      : rows;
+    return c.json({ invitations }, 200);
+  })
+  .post("/", requireTenant, requireRole("admin", "manager"), async (c) => {
+    const bodyResult = await parseJson(c, createInvitationSchema);
+    if (!bodyResult.success) return bodyResult.response;
+
+    const user = c.get("user")!;
+    const caller = c.get("profile") as Profile;
+    const agencyId = c.get("agencyId") as string;
+    const { name, email, role } = bodyResult.data;
     if (caller.role === "manager" && role !== "agent") {
-      return c.json({ error: "Managers may only create agents" }, 403);
+      return c.json({ error: "Managers may only invite agents" }, 403);
     }
 
-    const tempPassword = password ?? `Aqari${nanoid(12)}!`;
-    let userId: string;
-    try {
-      const result = await auth.api.signUpEmail({ body: { name, email, password: tempPassword } });
-      userId = result.user.id;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to create user";
-      return c.json({ error: message }, 400);
+    const existingUser = await db.select({ id: schema.user.id }).from(schema.user)
+      .where(eq(schema.user.email, email)).get();
+    if (existingUser) return c.json({ error: "A user with this email already exists" }, 409);
+
+    const now = Date.now();
+    const existingInvitation = await db.select().from(schema.invitations)
+      .where(and(
+        eq(schema.invitations.agencyId, agencyId),
+        eq(schema.invitations.email, email),
+      ))
+      .get();
+    if (
+      existingInvitation &&
+      existingInvitation.acceptedAt == null &&
+      existingInvitation.revokedAt == null &&
+      existingInvitation.expiresAt > now
+    ) {
+      return c.json({ error: "An active invitation already exists for this email" }, 409);
+    }
+    if (existingInvitation?.acceptedAt) {
+      return c.json({ error: "This invitation identity has already been accepted" }, 409);
     }
 
-    await db.insert(schema.profiles).values({
-      id: userId, agencyId, role, active: 1,
-    }).onConflictDoNothing();
+    const token = createInvitationToken();
+    const tokenHash = hashInvitationToken(token);
+    const expiresAt = invitationExpiresAt(now);
+    let invitationId: string;
 
-    const authUser = await db.select().from(schema.user)
-      .where(eq(schema.user.id, userId)).get();
-    const newProfile = await findAgencyProfile(agencyId, userId);
+    if (existingInvitation) {
+      const refreshed = await db.update(schema.invitations).set({
+        name,
+        role,
+        tokenHash,
+        invitedBy: user.id,
+        expiresAt,
+        acceptedAt: null,
+        revokedAt: null,
+        createdAt: now,
+      }).where(and(
+        eq(schema.invitations.id, existingInvitation.id),
+        eq(schema.invitations.agencyId, agencyId),
+        isNull(schema.invitations.acceptedAt),
+        or(
+          lte(schema.invitations.expiresAt, now),
+          isNotNull(schema.invitations.revokedAt),
+        ),
+      )).returning({ id: schema.invitations.id });
+      if (refreshed.length !== 1) {
+        return c.json({ error: "Invitation changed concurrently; try again" }, 409);
+      }
+      invitationId = refreshed[0].id;
+    } else {
+      invitationId = nanoid();
+      const inserted = await db.insert(schema.invitations).values({
+        id: invitationId,
+        agencyId,
+        email,
+        name,
+        role,
+        tokenHash,
+        invitedBy: user.id,
+        expiresAt,
+      }).onConflictDoNothing().returning({ id: schema.invitations.id });
+      if (inserted.length !== 1) {
+        return c.json({ error: "An invitation already exists for this email" }, 409);
+      }
+    }
+
+    await recordStaffAudit({
+      agencyId,
+      userId: user.id,
+      type: "staff_invitation_created",
+      body: "Staff invitation created",
+      meta: { invitationId, email, role, expiresAt },
+    });
+
     const agency = await db.select().from(schema.agencies)
       .where(eq(schema.agencies.id, agencyId)).get();
     const appUrl = process.env.WEBSITE_URL ?? process.env.RUNABLE_URL ?? "";
-
-    sendEmail({
+    const invitationUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token)}`;
+    const emailResult = await sendEmail({
       to: email,
       ...agentInviteEmail({
-        name, email, password: tempPassword, role,
-        agencyName: agency?.name ?? "Aqari CRM", appUrl,
+        name,
+        role,
+        agencyName: agency?.name ?? "Aqari ERP",
+        invitationUrl,
+        expiresAt,
       }),
-    }).catch(() => {});
+    });
 
     return c.json({
-      agent: {
-        ...newProfile,
-        name: authUser?.name ?? "",
-        email: authUser?.email ?? "",
-      },
+      invitation: { id: invitationId, email, name, role, expiresAt },
+      emailSent: Boolean(emailResult),
+      ...(process.env.NODE_ENV !== "production" ? { invitationUrl } : {}),
     }, 201);
   })
-  .get("/:id", requireTenant, async (c) => {
+  .delete(
+    "/invitations/:id",
+    requireTenant,
+    requireRole("admin", "manager"),
+    async (c) => {
+      const idResult = parseParam(c, entityIdSchema);
+      if (!idResult.success) return idResult.response;
+      const user = c.get("user")!;
+      const caller = c.get("profile") as Profile;
+      const agencyId = c.get("agencyId") as string;
+      const invitation = await db.select().from(schema.invitations)
+        .where(and(
+          eq(schema.invitations.id, idResult.data),
+          eq(schema.invitations.agencyId, agencyId),
+        ))
+        .get();
+      if (!invitation) return c.json({ error: "Not found" }, 404);
+      if (caller.role === "manager" && invitation.role !== "agent") {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      if (invitation.acceptedAt) return c.json({ error: "Accepted invitations cannot be revoked" }, 409);
+
+      await db.update(schema.invitations).set({ revokedAt: Date.now() })
+        .where(and(
+          eq(schema.invitations.id, invitation.id),
+          eq(schema.invitations.agencyId, agencyId),
+        ));
+      await recordStaffAudit({
+        agencyId,
+        userId: user.id,
+        type: "staff_invitation_revoked",
+        body: "Staff invitation revoked",
+        meta: { invitationId: invitation.id, email: invitation.email, role: invitation.role },
+      });
+      return c.json({ ok: true }, 200);
+    },
+  )
+  .get("/:id", requireTenant, requireRole("admin", "manager"), async (c) => {
     const idResult = parseParam(c, entityIdSchema);
     if (!idResult.success) return idResult.response;
 
@@ -96,7 +232,7 @@ export const agents = new Hono()
       agent: { ...profile, name: authUser?.name ?? "", email: authUser?.email ?? "" },
     }, 200);
   })
-  .get("/:id/stats", requireTenant, async (c) => {
+  .get("/:id/stats", requireTenant, requireRole("admin", "manager"), async (c) => {
     const idResult = parseParam(c, entityIdSchema);
     if (!idResult.success) return idResult.response;
 
@@ -134,8 +270,11 @@ export const agents = new Hono()
     const target = await findAgencyProfile(agencyId, targetId);
     if (!target) return c.json({ error: "Not found" }, 404);
 
-    if (caller.role === "manager" && (target.role === "admin" || body.role !== undefined && body.role !== "agent")) {
-      return c.json({ error: "Forbidden" }, 403);
+    if (caller.role === "manager" && target.role !== "agent") {
+      return c.json({ error: "Managers may only manage agents" }, 403);
+    }
+    if (caller.role === "manager" && body.role !== undefined && body.role !== "agent") {
+      return c.json({ error: "Managers cannot promote agents" }, 403);
     }
     if (targetId === user.id && (body.role !== undefined || body.active === 0)) {
       return c.json({ error: "You cannot change your own role or deactivate yourself" }, 400);
@@ -158,5 +297,18 @@ export const agents = new Hono()
       .set({ role: body.role, active: body.active })
       .where(and(eq(schema.profiles.id, targetId), eq(schema.profiles.agencyId, agencyId)))
       .returning();
+    await recordStaffAudit({
+      agencyId,
+      userId: user.id,
+      type: "staff_profile_updated",
+      body: "Staff role or status updated",
+      meta: {
+        targetId,
+        previousRole: target.role,
+        nextRole,
+        previousActive: target.active,
+        nextActive,
+      },
+    });
     return c.json({ agent: profile }, 200);
   });

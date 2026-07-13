@@ -15,6 +15,16 @@ interface SendEmailOptions {
   replyTo?: string;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  })[character] ?? character);
+}
+
 export async function sendEmail({ to, subject, text, html, replyTo }: SendEmailOptions) {
   const client = getClient();
   if (!client) {
@@ -24,7 +34,7 @@ export async function sendEmail({ to, subject, text, html, replyTo }: SendEmailO
 
   const recipients = Array.isArray(to) ? to : [to];
   const base = {
-    from: "Aqari CRM <onboarding@resend.dev>",
+    from: process.env.EMAIL_FROM ?? "Aqari ERP <onboarding@resend.dev>",
     to: recipients,
     subject,
     ...(replyTo ? { replyTo } : {}),
@@ -41,27 +51,33 @@ export async function sendEmail({ to, subject, text, html, replyTo }: SendEmailO
   return data;
 }
 
-export function agentInviteEmail({ name, email, password, role, agencyName, appUrl }: {
-  name: string; email: string; password: string; role: string; agencyName: string; appUrl: string;
+export function agentInviteEmail({ name, role, agencyName, invitationUrl, expiresAt }: {
+  name: string;
+  role: string;
+  agencyName: string;
+  invitationUrl: string;
+  expiresAt: number;
 }) {
+  const safeName = escapeHtml(name);
+  const safeRole = escapeHtml(role);
+  const safeAgencyName = escapeHtml(agencyName);
+  const safeUrl = escapeHtml(invitationUrl);
+  const expiry = new Date(expiresAt).toUTCString();
+
   return {
-    subject: `You've been invited to ${agencyName} on Aqari CRM`,
+    subject: `You've been invited to ${agencyName} on Aqari ERP`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-        <h2 style="color: #111;">Welcome ${name} to ${agencyName}</h2>
-        <p>You've been added as a <strong>${role}</strong> on Aqari CRM.</p>
-        <p>Your login details:</p>
-        <table style="border-collapse: collapse; margin: 16px 0;">
-          <tr><td style="padding: 4px 12px 4px 0; color: #666;">Email</td><td style="padding: 4px 0; font-weight: 600;">${email}</td></tr>
-          <tr><td style="padding: 4px 12px 4px 0; color: #666;">Password</td><td style="padding: 4px 0; font-weight: 600;">${password}</td></tr>
-        </table>
-        <p style="color: #666; font-size: 13px;">We recommend changing your password after your first login.</p>
-        <a href="${appUrl}/sign-in" style="display: inline-block; margin-top: 12px; padding: 10px 20px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600;">
-          Sign in
+        <h2 style="color: #111;">Welcome ${safeName} to ${safeAgencyName}</h2>
+        <p>You've been invited as a <strong>${safeRole}</strong>.</p>
+        <p>Use the secure link below to choose your password and activate your account. The link can be used once and expires on <strong>${expiry}</strong>.</p>
+        <a href="${safeUrl}" style="display: inline-block; margin-top: 12px; padding: 10px 20px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          Accept invitation
         </a>
+        <p style="color: #666; font-size: 13px; margin-top: 18px;">If you did not expect this invitation, ignore this email.</p>
       </div>
     `,
-    text: `Welcome ${name} to ${agencyName}!\n\nYou've been added as a ${role} on Aqari CRM.\n\nEmail: ${email}\nPassword: ${password}\n\nSign in: ${appUrl}/sign-in`,
+    text: `Welcome ${name} to ${agencyName}!\n\nYou've been invited as a ${role}. Choose your password using this single-use link before ${expiry}:\n${invitationUrl}`,
   };
 }
 
@@ -75,10 +91,10 @@ export function taskReminderEmail({ name, title, dueAt, leadName, appUrl, leadId
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #ef4444;">Task overdue</h2>
-        <p>Hi ${name || "there"}, this task was due on <strong>${dueStr}</strong> and hasn't been marked done yet:</p>
-        <p style="font-size: 16px; font-weight: 600;">${title}</p>
-        ${leadName ? `<p style="color: #666;">Related to lead: ${leadName}</p>` : ""}
-        <a href="${link}" style="display: inline-block; margin-top: 12px; padding: 10px 20px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600;">
+        <p>Hi ${escapeHtml(name || "there")}, this task was due on <strong>${escapeHtml(dueStr)}</strong> and hasn't been marked done yet:</p>
+        <p style="font-size: 16px; font-weight: 600;">${escapeHtml(title)}</p>
+        ${leadName ? `<p style="color: #666;">Related to lead: ${escapeHtml(leadName)}</p>` : ""}
+        <a href="${escapeHtml(link)}" style="display: inline-block; margin-top: 12px; padding: 10px 20px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600;">
           View task
         </a>
       </div>
