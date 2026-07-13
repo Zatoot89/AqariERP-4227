@@ -4,6 +4,7 @@ import { auth } from "../auth";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { hashInvitationToken } from "../lib/invitations";
+import { nanoid } from "../lib/id";
 import { parseJson } from "../lib/validation";
 import { acceptInvitationSchema } from "../validation/invitations";
 
@@ -62,14 +63,26 @@ export const invitations = new Hono().post("/accept", async (c) => {
         role: invitation.role,
         active: 1,
       });
+      await tx.insert(schema.activities).values({
+        id: nanoid(),
+        agencyId: invitation.agencyId,
+        userId,
+        type: "staff_invitation_accepted",
+        body: "Staff invitation accepted",
+        meta: JSON.stringify({
+          invitationId: invitation.id,
+          email: invitation.email,
+          role: invitation.role,
+        }),
+      });
     });
   } catch (error) {
     if (userId) {
       await db.delete(schema.user).where(eq(schema.user.id, userId)).catch(() => {});
     }
     const message = error instanceof Error ? error.message : "Invitation acceptance failed";
-    const status = message.includes("already") ? 409 : 400;
-    return c.json({ error: message }, status);
+    if (message.includes("already")) return c.json({ error: message }, 409);
+    return c.json({ error: message }, 400);
   }
 
   return c.json({ ok: true, email: invitation.email }, 201);
