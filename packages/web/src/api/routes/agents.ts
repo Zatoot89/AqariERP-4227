@@ -23,7 +23,7 @@ async function findAgencyProfile(agencyId: string, profileId: string): Promise<P
 }
 
 export const agents = new Hono()
-  .get("/", requireTenant, async (c) => {
+  .get("/", requireTenant, requireRole("admin", "manager"), async (c) => {
     const agencyId = c.get("agencyId") as string;
     const agentProfiles = await db.select().from(schema.profiles)
       .where(eq(schema.profiles.agencyId, agencyId));
@@ -36,8 +36,9 @@ export const agents = new Hono()
     return c.json({ agents: agentList }, 200);
   })
   .get("/invitations", requireTenant, requireRole("admin", "manager"), async (c) => {
+    const caller = c.get("profile") as Profile;
     const agencyId = c.get("agencyId") as string;
-    const invitations = await db.select({
+    const rows = await db.select({
       id: schema.invitations.id,
       email: schema.invitations.email,
       name: schema.invitations.name,
@@ -49,6 +50,9 @@ export const agents = new Hono()
     }).from(schema.invitations)
       .where(eq(schema.invitations.agencyId, agencyId))
       .orderBy(desc(schema.invitations.createdAt));
+    const invitations = caller.role === "manager"
+      ? rows.filter((invitation) => invitation.role === "agent")
+      : rows;
     return c.json({ invitations }, 200);
   })
   .post("/", requireTenant, requireRole("admin", "manager"), async (c) => {
@@ -123,6 +127,7 @@ export const agents = new Hono()
     async (c) => {
       const idResult = parseParam(c, entityIdSchema);
       if (!idResult.success) return idResult.response;
+      const caller = c.get("profile") as Profile;
       const agencyId = c.get("agencyId") as string;
       const invitation = await db.select().from(schema.invitations)
         .where(and(
@@ -131,6 +136,9 @@ export const agents = new Hono()
         ))
         .get();
       if (!invitation) return c.json({ error: "Not found" }, 404);
+      if (caller.role === "manager" && invitation.role !== "agent") {
+        return c.json({ error: "Forbidden" }, 403);
+      }
       if (invitation.acceptedAt) return c.json({ error: "Accepted invitations cannot be revoked" }, 409);
 
       await db.update(schema.invitations).set({ revokedAt: Date.now() })
@@ -141,7 +149,7 @@ export const agents = new Hono()
       return c.json({ ok: true }, 200);
     },
   )
-  .get("/:id", requireTenant, async (c) => {
+  .get("/:id", requireTenant, requireRole("admin", "manager"), async (c) => {
     const idResult = parseParam(c, entityIdSchema);
     if (!idResult.success) return idResult.response;
 
@@ -155,7 +163,7 @@ export const agents = new Hono()
       agent: { ...profile, name: authUser?.name ?? "", email: authUser?.email ?? "" },
     }, 200);
   })
-  .get("/:id/stats", requireTenant, async (c) => {
+  .get("/:id/stats", requireTenant, requireRole("admin", "manager"), async (c) => {
     const idResult = parseParam(c, entityIdSchema);
     if (!idResult.success) return idResult.response;
 
@@ -193,8 +201,11 @@ export const agents = new Hono()
     const target = await findAgencyProfile(agencyId, targetId);
     if (!target) return c.json({ error: "Not found" }, 404);
 
-    if (caller.role === "manager" && (target.role === "admin" || body.role !== undefined && body.role !== "agent")) {
-      return c.json({ error: "Forbidden" }, 403);
+    if (caller.role === "manager" && target.role !== "agent") {
+      return c.json({ error: "Managers may only manage agents" }, 403);
+    }
+    if (caller.role === "manager" && body.role !== undefined && body.role !== "agent") {
+      return c.json({ error: "Managers cannot promote agents" }, 403);
     }
     if (targetId === user.id && (body.role !== undefined || body.active === 0)) {
       return c.json({ error: "You cannot change your own role or deactivate yourself" }, 400);
