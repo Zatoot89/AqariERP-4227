@@ -407,7 +407,7 @@ describe("reconciliation and tenant isolation", () => {
   });
 
   test("database rejects cross-tenant finance relationships", async () => {
-    expect(db.insert(finance.receipts).values({
+    await expect(db.insert(finance.receipts).values({
       id: "cross-tenant-receipt",
       agencyId: agencyA,
       receiptNumber: "RCT-2026-999999",

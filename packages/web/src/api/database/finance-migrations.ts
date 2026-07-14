@@ -270,14 +270,15 @@ const tenantTriggers = [
 
 const stateTriggers = [
   `CREATE TRIGGER IF NOT EXISTS schedules_state_transition BEFORE UPDATE OF status ON payment_schedules WHEN OLD.status <> NEW.status BEGIN
-    SELECT CASE WHEN NOT ((OLD.status = 'draft' AND NEW.status IN ('active','cancelled')) OR (OLD.status = 'active' AND NEW.status IN ('completed','cancelled'))) THEN RAISE(ABORT, 'invalid schedule transition') END;
+    SELECT CASE WHEN NOT ((OLD.status = 'draft' AND NEW.status IN ('active','cancelled')) OR (OLD.status = 'active' AND NEW.status IN ('completed','cancelled')) OR (OLD.status = 'completed' AND NEW.status = 'active')) THEN RAISE(ABORT, 'invalid schedule transition') END;
   END`,
   `CREATE TRIGGER IF NOT EXISTS invoices_state_transition BEFORE UPDATE OF status ON invoices WHEN OLD.status <> NEW.status BEGIN
     SELECT CASE WHEN NOT (
       (OLD.status = 'draft' AND NEW.status IN ('issued','void')) OR
       (OLD.status = 'issued' AND NEW.status IN ('partially_paid','paid','overdue','void')) OR
       (OLD.status = 'partially_paid' AND NEW.status IN ('paid','overdue','void')) OR
-      (OLD.status = 'overdue' AND NEW.status IN ('partially_paid','paid','void'))
+      (OLD.status = 'overdue' AND NEW.status IN ('partially_paid','paid','void')) OR
+      (OLD.status = 'paid' AND NEW.status IN ('issued','partially_paid','overdue'))
     ) THEN RAISE(ABORT, 'invalid invoice transition') END;
   END`,
   `CREATE TRIGGER IF NOT EXISTS receipts_state_transition BEFORE UPDATE OF status ON receipts WHEN OLD.status <> NEW.status BEGIN
@@ -295,7 +296,8 @@ const stateTriggers = [
       (OLD.status = 'draft' AND NEW.status IN ('pending_approval','cancelled')) OR
       (OLD.status = 'pending_approval' AND NEW.status IN ('approved','rejected','cancelled')) OR
       (OLD.status = 'approved' AND NEW.status IN ('partially_paid','paid','cancelled')) OR
-      (OLD.status = 'partially_paid' AND NEW.status IN ('paid','cancelled'))
+      (OLD.status = 'partially_paid' AND NEW.status IN ('paid','approved','cancelled')) OR
+      (OLD.status = 'paid' AND NEW.status IN ('approved','partially_paid'))
     ) THEN RAISE(ABORT, 'invalid commission transition') END;
   END`,
   `CREATE TRIGGER IF NOT EXISTS commission_payouts_state_transition BEFORE UPDATE OF status ON commission_payouts WHEN OLD.status <> NEW.status BEGIN

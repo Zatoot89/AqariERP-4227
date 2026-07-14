@@ -14,6 +14,7 @@ import { audit } from "./routes/audit";
 import { contacts } from "./routes/contacts";
 import { developments } from "./routes/developments";
 import { inventory } from "./routes/inventory";
+import { finance } from "./routes/finance";
 import { invitations } from "./routes/invitations";
 import { leads } from "./routes/leads";
 import { properties } from "./routes/properties";
@@ -58,6 +59,7 @@ const app = new Hono()
   .route("/developments", developments)
   .route("/inventory", inventory)
   .route("/transactions", transactions)
+  .route("/finance", finance)
   .route("/leads", leads)
   .route("/properties", properties)
   .route("/tasks", tasks)
